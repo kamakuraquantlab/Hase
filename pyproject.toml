@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hase"
+version = "0.1.0"
+description = "Kamakura Quant Lab analysis toolkit"
+readme = "README.md"
+requires-python = ">=3.11"
+
+dependencies = [
+    "pyarrow>=15.0",
+    "pandas>=2.0",
+    "numpy",
+    "matplotlib>=3.8",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0.0", "ruff>=0.1.0"]
+
+[project.scripts]
+hase = "cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["hase*"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+extend-select = ["I"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
