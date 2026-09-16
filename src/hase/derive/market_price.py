@@ -60,7 +60,12 @@ def _walk_notional(price, qty, target):
     notional = price * qty
     taken = np.clip(target - (np.cumsum(notional, axis=1) - notional), 0.0, notional)
     spent = taken.sum(axis=1)
-    base = (taken / np.where(price > 0, price, np.nan)).sum(axis=1)
+    # Divided with `where` rather than by a NaN-filled price. An exchange pads
+    # the far end of the book with empty levels, so most rows carry a zero
+    # price somewhere; dividing by NaN there poisons the whole row sum even
+    # though nothing was taken from that level, and the book reads as unable to
+    # fill an amount its first level covers.
+    base = np.divide(taken, price, out=np.zeros_like(taken), where=price > 0).sum(axis=1)
     enough = spent >= target * FILL_TOLERANCE
     return np.where(enough, spent / np.where(base > 0, base, np.nan), np.nan), spent
 

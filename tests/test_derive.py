@@ -101,6 +101,38 @@ def test_market_price_marks_degenerate_snapshots_without_dropping_them(make_data
     assert DEGENERATE_SPREAD_BPS == 100.0
 
 
+def test_a_notional_fills_from_a_book_that_is_padded_with_empty_levels(root, make_data):
+    """An exchange pads the far end of the book, and that must not matter.
+
+    Walking to a cash amount converts notional to base units by dividing by the
+    price, and a padded level has no price. Dividing by NaN there poisoned the
+    whole row even though nothing was taken from that level, so a book whose
+    first level covered the amount several times over reported that it could
+    not fill at all. Measured on a real day it marked 95% of books unfillable.
+    """
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    from hase.layout import data_path
+
+    make_data()
+    path = data_path(root, MARKET, "OrderBook", DATE)
+    own = pq.ParquetFile(path).schema_arrow.names
+    table = pq.read_table(path, columns=own).to_pydict()
+    for level in range(3, 20):                     # only three real levels
+        n = len(table["ts"])
+        for side in ("bid", "ask"):
+            table[f"{side}{level}_price"] = [0.0] * n
+            table[f"{side}{level}_qty"] = [0.0] * n
+    pq.write_table(pa.Table.from_pydict(table), path)
+
+    # One level holds 1.0 at about 15,000,000, so 1,000,000 yen is a fraction
+    # of the first level and must fill from it alone.
+    df = market_price(root, MARKET, DATE, execution_notional=1_000_000)
+    assert df["filled"].all(), "a padded book refused an amount its first level covers"
+    assert (df["spread_bps"] > 0).all()
+
+
 def test_size_and_notional_are_different_partitions():
     """They are different units and must never share a directory name."""
     size, _ = plan("MarketPrice", execution_size=0.002)
