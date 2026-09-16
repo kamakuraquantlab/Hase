@@ -25,6 +25,23 @@ DEFAULT_LOOKBACK = 300
 COLUMNS = ["ts", "sec", "mid", "spread_bps", "rv_bps"]
 
 
+def second_grid(timestamps, values):
+    """One value per second of the Tokyo day, from UTC epoch timestamps.
+
+    Public because it is the primitive the articles share: mid from the book,
+    price from the trades, and any other series that has to be put on a common
+    clock before two of them can be compared.
+    """
+    import numpy as _np
+
+    ts = _np.asarray(timestamps, dtype="float64")
+    v = _np.asarray(values, dtype="float64")
+    ok = _np.isfinite(ts) & _np.isfinite(v) & (v > 0)
+    if not ok.any():
+        return _np.full(DAY, _np.nan)
+    return _grid(((ts[ok] + JST_OFFSET) % DAY).astype(_np.int64), v[ok])
+
+
 def _grid(second_of_day, values):
     """Last value in each second, forward filled, NaN before the first."""
     grid = np.full(DAY, np.nan)
