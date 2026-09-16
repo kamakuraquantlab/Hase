@@ -2,15 +2,23 @@
 
 Run as: python src/cli.py <command> [options]
 
-Reads the data Komachi downloaded and draws it. Only the plotting half is
-implemented so far; derivations, analysis and export come later.
+Reads the data Komachi downloaded, derives what the articles need from it,
+and draws it.
 """
 
 import argparse
 import sys
 from pathlib import Path
 
-from hase.layout import DEFAULT_ROOT, InvalidMarketError, available_dates, root_path
+from hase.derive import DERIVATIONS, run as run_derivation
+from hase.layout import (
+    DEFAULT_ROOT,
+    DERIVED,
+    InvalidMarketError,
+    available_dates,
+    available_derived_dates,
+    root_path,
+)
 from hase.plot import plot_order_book, plot_trades
 from hase.store import MissingDataError
 
@@ -30,6 +38,82 @@ def cmd_dates(args) -> int:
         else:
             print(f"{data_type:10} nothing downloaded")
     return 0
+
+
+def _date_range(start: str, end: str) -> list[str]:
+    import datetime as dt
+
+    lo, hi = dt.date.fromisoformat(start), dt.date.fromisoformat(end)
+    if hi < lo:
+        raise ValueError(f"--end {end} is before --start {start}")
+    return [(lo + dt.timedelta(days=i)).isoformat() for i in range((hi - lo).days + 1)]
+
+
+def cmd_derive(args) -> int:
+    """Compute a dataset for a range of days, skipping what is already there."""
+    root = _root(args)
+    wanted = _date_range(args.start, args.end or args.start)
+    made = skipped = missing = 0
+    for file_date in wanted:
+        try:
+            path, was_made = run_derivation(
+                root, args.dataset, args.market, file_date,
+                recreate=args.recreate,
+                execution_size=getattr(args, "execution_size", None),
+                execution_notional=getattr(args, "execution_notional", None),
+                step=getattr(args, "step", None),
+                lookback=getattr(args, "lookback", None),
+            )
+        except MissingDataError as exc:
+            missing += 1
+            print(f"  {file_date}  no source data", file=sys.stderr)
+            if missing == 1:
+                print(f"    {exc}", file=sys.stderr)
+            continue
+        if was_made:
+            made += 1
+            print(f"  {file_date}  {path.stat().st_size / 1e6:.1f} MB")
+        else:
+            skipped += 1
+    print(f"\n{args.dataset} for {args.market}: {made} derived, {skipped} already present, "
+          f"{missing} without source data")
+    return 1 if made == 0 and skipped == 0 else 0
+
+
+def cmd_local(args) -> int:
+    """What has been downloaded and what has been derived from it."""
+    root = _root(args)
+    print(f"{args.market}   {root}\n")
+    for data_type in ("Trade", "OrderBook"):
+        dates = available_dates(root, args.market, data_type)
+        state = f"{len(dates):>4} day(s)  {dates[0]} .. {dates[-1]}" if dates else "   nothing downloaded"
+        print(f"bronze  {data_type:12} {state}")
+    for dataset in sorted(DERIVED):
+        layer = DERIVED[dataset][0]
+        for params in _parameterisations(root, dataset, args.market):
+            dates = available_derived_dates(root, dataset, args.market, params)
+            if not dates:
+                continue
+            label = " ".join(f"{k}={v}" for k, v in params.items()) or ""
+            print(f"{layer:7} {dataset:12} {len(dates):>4} day(s)  {dates[0]} .. {dates[-1]}  {label}")
+    return 0
+
+
+def _parameterisations(root, dataset, market):
+    """Every parameter partition present on disk for this dataset, plus the bare one."""
+    from hase.layout import parse_market
+
+    layer = DERIVED[dataset][0]
+    exchange, symbol = parse_market(market)
+    base = root / layer / f"dataset={dataset}" / f"exchange={exchange}" / f"symbol={symbol}"
+    if not base.is_dir():
+        return []
+    found = [{}]
+    for child in sorted(base.iterdir()):
+        if child.is_dir() and "=" in child.name and not child.name.startswith("date="):
+            key, value = child.name.split("=", 1)
+            found.append({key: value})
+    return found
 
 
 def cmd_trades(args) -> int:
@@ -71,6 +155,25 @@ dates
     p = sub.add_parser("dates", help="What is downloaded for a market")
     p.add_argument("--market", required=True)
     p.set_defaults(func=cmd_dates)
+
+    p = sub.add_parser("derive", help="Compute a silver or gold dataset from bronze")
+    p.add_argument("dataset", choices=sorted(DERIVATIONS))
+    p.add_argument("--market", required=True)
+    p.add_argument("--start", required=True, help="JST day, YYYY-MM-DD")
+    p.add_argument("--end", help="JST day. Defaults to --start")
+    p.add_argument("--recreate", action="store_true", help="Rebuild days that already exist")
+    p.add_argument("--execution-size", type=float,
+                   help="MarketPrice: trade size in base currency, e.g. 0.002")
+    p.add_argument("--execution-notional", type=float,
+                   help="MarketPrice: trade size in quote currency, e.g. 1000000")
+    p.add_argument("--step", type=int, help="VolSpread: grid interval in seconds. Default 1")
+    p.add_argument("--lookback", type=int,
+                   help="VolSpread: realized volatility window in seconds. Default 300")
+    p.set_defaults(func=cmd_derive)
+
+    p = sub.add_parser("local", help="What is downloaded, and what has been derived")
+    p.add_argument("--market", required=True)
+    p.set_defaults(func=cmd_local)
 
     p = sub.add_parser("plot-trades", help="Trade price and buy/sell volume")
     p.add_argument("--market", required=True)

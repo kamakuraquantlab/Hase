@@ -1,8 +1,8 @@
-"""Loading market data into dataframes."""
+"""Loading market data into dataframes, and writing derived data back."""
 
 from pathlib import Path
 
-from .layout import data_path
+from .layout import data_path, derived_path
 
 
 class MissingDataError(FileNotFoundError):
@@ -43,3 +43,43 @@ def load_order_book(root: Path, market: str, file_date: str, depth: int = 1):
     for i in range(depth):
         columns += [f"bid{i}_price", f"bid{i}_qty", f"ask{i}_price", f"ask{i}_qty"]
     return _read(root, market, "OrderBook", file_date, columns=columns)
+
+
+def write_derived(root: Path, dataset: str, market: str, file_date: str, frame,
+                  params: dict[str, str] | None = None) -> Path:
+    """Write one day of a derived dataset, atomically.
+
+    Via a temporary file in the same directory and then a rename, because a
+    derivation interrupted half way through leaves a parquet file that opens,
+    reads, and is wrong. A partial day is worse than a missing one: the missing
+    day is obvious and the partial one is not.
+    """
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    path = derived_path(root, dataset, market, file_date, params)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".parquet.partial")
+    pq.write_table(pa.Table.from_pandas(frame, preserve_index=False), tmp, compression="zstd")
+    tmp.replace(path)
+    return path
+
+
+def read_derived(root: Path, dataset: str, market: str, file_date: str,
+                 params: dict[str, str] | None = None, columns=None):
+    """Read one day of a derived dataset, or say how to make it.
+
+    The frame comes back wider than it was written: pyarrow recovers
+    `dataset`, `exchange`, `symbol`, `date` and any parameter partition from
+    the directory names. That is the point of matching the warehouse layout, so
+    they are left in rather than dropped.
+    """
+    import pyarrow.parquet as pq
+
+    path = derived_path(root, dataset, market, file_date, params)
+    if not path.is_file():
+        raise MissingDataError(
+            f"No {dataset} for {market} on {file_date} under {root}. Derive it first:  "
+            f"hase derive {dataset} --market {market} --start {file_date} --end {file_date}"
+        )
+    return pq.read_table(path, columns=columns).to_pandas()

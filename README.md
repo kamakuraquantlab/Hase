@@ -1,6 +1,7 @@
 # Hase
 
-The **Kamakura Quant Lab** analysis toolkit. Reads the data Komachi downloads
+The **Kamakura Quant Lab** analysis toolkit. Reads the bronze data Komachi
+downloads, derives the silver and gold datasets the articles are written on,
 and draws it.
 
 Named for the district where the Great Buddha sits. Komachi is where you get
@@ -10,10 +11,52 @@ Design: `system/04_hase-analysis-toolkit.md` in the Hotaka repository.
 
 ```bash
 pip install -e .
-hase dates       --market COINCHECK:BTC_SPOT
+hase local       --market COINCHECK:BTC_SPOT
+hase derive MarketPrice --market COINCHECK:BTC_SPOT --start 2025-07-01 --end 2025-07-28
+hase derive VolSpread   --market COINCHECK:BTC_SPOT --start 2025-07-01 --end 2025-07-28
 hase plot-trades --market COINCHECK:BTC_SPOT --date 2025-07-01 --output trades.png
 hase plot-book   --market COINCHECK:BTC_SPOT --date 2025-07-01 --output book.png
 ```
+
+## What it derives
+
+Komachi downloads `bronze/`. Hase turns it into the datasets the articles are
+written on, beside it under the same root, in the layout the warehouse uses.
+
+| Dataset | Layer | What it is |
+|---|---|---|
+| `BookState` | silver | Best bid and ask per snapshot, with mid, spread and the depth resting at the touch |
+| `MarketPrice` | silver | What a given trade size would actually pay, by walking the book |
+| `VolSpread` | gold | Mid and spread on a one-second grid, and realized volatility measured on it |
+
+**Size is in base currency.** `--execution-size 0.002` is 0.002 BTC, and it is
+the default because it means the same trade on every venue and on every day.
+`--execution-notional 1000000` walks to a cash amount instead, which is a
+different question and a different partition: ¥1,000,000 bought 0.0647 BTC in
+July 2025 and 0.0796 BTC in September 2026, so a notional is not comparable
+with itself over time, and a USDT-quoted book cannot be walked to a yen target
+at all.
+
+Deriving costs about a quarter of a second per market-day, so a market-year is
+a minute and a half. `MarketPrice` is around an eighth the size of the bronze
+it reads.
+
+**Nothing is dropped silently.** A size the visible book cannot fill is `NaN`
+with `filled` false, rather than a partial fill priced as a whole one. A
+snapshot whose walked spread exceeds 100 bps is flagged `degenerate` rather
+than removed: those are collector artefacts from a resync, they are present in
+historical bronze, and how many of them a day holds is a fact about the archive
+worth being able to count.
+
+## Agreement with the warehouse
+
+Hase reimplements Makalu rather than importing it, because a customer tool must
+not depend on trading code. That is only safe if the two agree, so the test
+suite checks `MarketPrice` against Makalu's own stored output where the
+warehouse is mounted, and skips where it is not. Measured on a full day of
+`COINCHECK:BTC_SPOT` and `GMO:BTC_JPY`, the largest relative difference is
+4e-16 — floating-point last-bit, from accumulating the levels in a different
+order.
 
 ## It holds no credential
 
