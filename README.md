@@ -7,8 +7,6 @@ and draws it.
 Named for the district where the Great Buddha sits. Komachi is where you get
 things; Hase is where you go to look at them.
 
-Design: `system/04_hase-analysis-toolkit.md` in the Hotaka repository.
-
 ```bash
 pip install -e .
 hase local       --market COINCHECK:BTC_SPOT
@@ -48,12 +46,13 @@ than removed: those are collector artefacts from a resync, they are present in
 historical bronze, and how many of them a day holds is a fact about the archive
 worth being able to count.
 
-## Agreement with the warehouse
+## Agreement with the pipeline that produced the data
 
-Hase reimplements Makalu rather than importing it, because a customer tool must
-not depend on trading code. That is only safe if the two agree, so the test
-suite checks `MarketPrice` against Makalu's own stored output where the
-warehouse is mounted, and skips where it is not. Measured on a full day of
+Hase reimplements these derivations rather than importing them from the
+pipeline that built the archive, because a tool you install must not depend on
+trading code. That is only safe if the two agree, so the test suite checks
+`MarketPrice` against the pipeline's own stored output where that warehouse is
+mounted, and skips where it is not. Measured on a full day of
 `COINCHECK:BTC_SPOT` and `GMO:BTC_JPY`, the largest relative difference is
 4e-16 — floating-point last-bit, from accumulating the levels in a different
 order.
@@ -114,9 +113,7 @@ would be worse than saying how many there were.
 ## Not yet built
 
 Silver and gold derivation, spread volatility, lead-lag, InfluxDB and Grafana
-export. `system/04` sections 4 and 10 cover what can be ported from Makalu and
-what has to be written; the lead-lag plot is the piece with no reference
-implementation.
+export. The lead-lag plot is the piece with no reference implementation.
 
 ## Tests
 

@@ -26,8 +26,8 @@ LEVELS = 20
 FILL_TOLERANCE = 0.999
 COLUMNS = ["ts", "bid", "ask", "mid", "spread", "spread_bps", "filled", "degenerate"]
 
-# Makalu's `PopulateMarketPriceStep.DEGENERATE_SPREAD_BPS`, and the reason is
-# worth carrying across because the artefact is in the bronze this reads.
+# A guard against collector artefacts, and the reason matters because the
+# artefacts are in the bronze this reads.
 #
 # The collector used to emit partial books after a snapshot resync -- one to
 # three levels with stale far-away prices behind them. Walking one of those

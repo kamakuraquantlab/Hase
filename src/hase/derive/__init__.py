@@ -5,8 +5,9 @@ which parameters. Each derivation is a pure function of one market-day: give it
 the same bronze and it produces the same rows, which is what lets an article
 cite a number and a reader reproduce it.
 
-`system/04_hase-analysis-toolkit.md` section 5 decides what lives in which
-layer, and which of these are worth keeping on disk at all.
+Which layer a dataset belongs to, and whether it is worth keeping on disk at
+all, follows the medallion convention: silver is point-in-time and cheap, gold
+is windowed and parameterised.
 """
 
 from pathlib import Path
@@ -49,9 +50,8 @@ def run(root: Path, dataset: str, market: str, file_date: str, *, recreate: bool
         execution_size=None, execution_notional=None, step=None, lookback=None) -> tuple[Path, bool]:
     """Derive one market-day. Returns the path and whether it was computed.
 
-    Existing output is left alone unless `recreate`, matching Makalu's
-    `populate`: re-running a range to fill a gap should cost the gap, not the
-    range.
+    Existing output is left alone unless `recreate`: re-running a range to
+    fill a gap should cost the gap, not the range.
     """
     params, kwargs = plan(dataset, execution_size=execution_size,
                           execution_notional=execution_notional, step=step, lookback=lookback)

@@ -4,9 +4,8 @@ Duplicated from Komachi rather than imported: the two ship separately and a
 buyer may install either alone, so a shared package would be a third thing to
 version for the sake of forty lines.
 
-`system/04_hase-analysis-toolkit.md` section 2 sets the rule this module obeys.
-Hase reads local files. It reaches no API, holds no credential, and knows
-nothing about entitlement.
+The rule this module obeys: Hase reads local files. It reaches no API, holds no
+credential, and knows nothing about entitlement.
 """
 
 import os
@@ -19,7 +18,8 @@ GOLD = "gold"
 DATA_TYPES = ("Trade", "OrderBook")
 
 # Where each derived dataset lives, and which bronze dataset it is built from.
-# `system/04_hase-analysis-toolkit.md` section 5 is the authority on the split.
+# Silver is point-in-time and derived per market; gold is windowed and carries
+# its parameters in the path.
 DERIVED = {
     "BookState": (SILVER, "OrderBook"),
     "MarketPrice": (SILVER, "OrderBook"),

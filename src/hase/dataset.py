@@ -6,8 +6,9 @@ same frame either way.
 
 That matters in two directions. A buyer runs `hase derive` once and every
 script afterwards reads files. The seller points the same script at the
-warehouse, where `silver/dataset=MarketPrice/...` already exists because Makalu
-built it -- and it is read rather than recomputed, and never written over.
+warehouse, where `silver/dataset=MarketPrice/...` may already exist because the
+pipeline that produced the data built it -- and it is read rather than
+recomputed, and never written over.
 Nothing here writes; materialising is `hase derive`'s job alone.
 """
 
@@ -43,9 +44,9 @@ def load(root: Path, dataset: str, market: str, file_date: str, *, prefer_stored
 def _usable(dataset: str, columns) -> bool:
     """Whether a stored file is the dataset Hase means by that name.
 
-    A path is not a schema. Makalu writes a `BookState` too, and it is a
-    different table -- `best_bid` and `best_spread_bps` where Hase has `bid`
-    and `spread_bps`, plus imbalance columns Hase does not compute. Reading it
+    A path is not a schema. Another tool may well write a `BookState` of its
+    own at the same address, holding a different table -- `best_bid` and
+    `best_spread_bps` where Hase has `bid` and `spread_bps`, say. Reading it
     because the directory name matched would hand a script a frame missing the
     columns it is about to ask for, which is the good case; the bad case is a
     column that exists under the same name and means something else.
@@ -68,10 +69,10 @@ def _announce(dataset: str, market: str, path: Path) -> None:
 def _normalise(dataset: str, frame, kwargs):
     """Give a stored frame the columns a derived one would have.
 
-    Makalu's MarketPrice predates `filled` and `degenerate` and drops the rows
-    they would have described. Rebuilding them from what is there means a
-    script sees one shape whichever source it read, instead of branching on
-    where the data came from.
+    A MarketPrice written by an older tool may predate `filled` and
+    `degenerate` and drop the rows they would have described. Rebuilding them
+    from what is there means a script sees one shape whichever source it read,
+    instead of branching on where the data came from.
     """
     import numpy as np
 
