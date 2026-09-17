@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=77.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,6 +8,23 @@ version = "0.1.0"
 description = "Kamakura Quant Lab analysis toolkit"
 readme = "README.md"
 requires-python = ">=3.11"
+
+license = "Apache-2.0"
+license-files = ["LICENSE.md"]
+authors = [{name = "Kamakura Quant Lab", email = "support@kamakuraquantlab.jp"}]
+keywords = ["cryptocurrency", "market-data", "order-book", "japan", "quantitative-finance"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Financial and Insurance Industry",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Office/Business :: Financial :: Investment",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+]
 
 dependencies = [
     "pyarrow>=15.0",
@@ -18,6 +35,12 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0.0", "ruff>=0.1.0"]
+
+[project.urls]
+Homepage = "https://kamakuraquantlab.jp"
+Documentation = "https://kamakuraquantlab.jp/support/"
+Source = "https://github.com/kamakuraquantlab/Hase"
+"The data" = "https://kamakuraquantlab.jp/data/"
 
 [project.scripts]
 # `hase.cli`, not a bare `cli`: a top-level module outside the package is
