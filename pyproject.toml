@@ -20,7 +20,10 @@ dependencies = [
 dev = ["pytest>=7.0.0", "ruff>=0.1.0"]
 
 [project.scripts]
-hase = "cli:main"
+# `hase.cli`, not a bare `cli`: a top-level module outside the package is
+# not installed by `packages.find`, so the command imported whichever `cli`
+# some other distribution happened to ship.
+hase = "hase.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
