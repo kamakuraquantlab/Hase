@@ -70,10 +70,14 @@ would fetch it. It will not fetch anything itself.
 
 ## Where it reads from
 
-`--root`, then `ROOT_PATH` or `KQL_ROOT_PATH` in the environment, then
-`KQL_ROOT_PATH` in a `.env` in the working directory, then `~/kql-data`. The
-`.env` is the one Komachi writes on first use, so the two tools agree without
-being configured twice.
+`--root`, then `ROOT_PATH` in the environment, then `ROOT_PATH` in
+`~/.kamakuraquantlab.env`, then `~/kamakuraquantlab-data`. That file is the one
+Komachi writes on first use, so the two tools agree without being configured
+twice — and if Hase is installed first, it asks the same question and writes
+the same file.
+
+Hase reads only the data root from it. The file also holds Komachi's purchase
+token, and Hase has no use for one.
 
 ```
 <root>/bronze/dataset=Trade/exchange=COINCHECK/symbol=BTC_SPOT/date=2025-07-01/data.parquet

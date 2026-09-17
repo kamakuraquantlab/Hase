@@ -1,5 +1,7 @@
 """Plotting, and the timezone it labels with."""
 
+from pathlib import Path
+
 import pytest
 
 from hase.layout import available_dates, root_path
@@ -9,14 +11,43 @@ from hase.store import MissingDataError, load_order_book, load_trades
 from conftest import DATE, MARKET
 
 
-def test_root_comes_from_the_env_file_komachi_writes(tmp_path, monkeypatch):
+def test_root_comes_from_the_settings_file_komachi_writes(tmp_path, monkeypatch):
+    """One file in the home directory, shared by both tools."""
+    import hase.layout as layout
+
     monkeypatch.delenv("ROOT_PATH", raising=False)
-    monkeypatch.delenv("KQL_ROOT_PATH", raising=False)
-    monkeypatch.chdir(tmp_path)
-    (tmp_path / ".env").write_text("KQL_ROOT_PATH=/somewhere/data\nKQL_API_URL=https://x\n")
+    env = tmp_path / ".kamakuraquantlab.env"
+    env.write_text("ROOT_PATH=/somewhere/data\nTOKEN=hk_secret\n")
+    monkeypatch.setattr(layout, "ENV_FILE", env)
 
     assert root_path(None).as_posix() == "/somewhere/data"
     assert root_path("/explicit").as_posix() == "/explicit"  # a flag still wins
+
+
+def test_hase_reads_the_root_and_nothing_else_from_that_file(tmp_path, monkeypatch):
+    """The file holds Komachi's token. Hase has no use for one and must not
+    grow a reason to read it."""
+    import hase.layout as layout
+
+    monkeypatch.delenv("ROOT_PATH", raising=False)
+    env = tmp_path / ".kamakuraquantlab.env"
+    env.write_text("ROOT_PATH=/somewhere/data\nTOKEN=hk_secret\n")
+    monkeypatch.setattr(layout, "ENV_FILE", env)
+
+    assert layout._from_env_file(env) == "/somewhere/data"
+    source = (Path(layout.__file__)).read_text()
+    assert "TOKEN" not in source, "layout.py should have no notion of a token"
+
+
+def test_an_unset_root_is_reported_as_unset(tmp_path, monkeypatch):
+    """`root_path` falls back to the default; `configured_root` says there was
+    nothing to fall back from, which is what triggers setup."""
+    import hase.layout as layout
+
+    monkeypatch.delenv("ROOT_PATH", raising=False)
+    monkeypatch.setattr(layout, "ENV_FILE", tmp_path / "absent.env")
+    assert layout.configured_root() is None
+    assert root_path(None) == Path(layout.DEFAULT_ROOT).expanduser()
 
 
 def test_missing_data_says_how_to_get_it(root):

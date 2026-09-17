@@ -25,8 +25,9 @@ DERIVED = {
     "MarketPrice": (SILVER, "OrderBook"),
     "VolSpread": (GOLD, "OrderBook"),
 }
-DEFAULT_ROOT = "~/kql-data"
-ENV_FILE = Path(".env")
+DEFAULT_ROOT = "~/kamakuraquantlab-data"
+ENV_FILE = Path("~/.kamakuraquantlab.env").expanduser()
+ROOT_KEY = "ROOT_PATH"
 
 _MARKET_RE = re.compile(r"^[A-Z0-9]+:[A-Z0-9_]+$")
 
@@ -42,26 +43,78 @@ def parse_market(market: str) -> tuple[str, str]:
     return exchange, symbol
 
 
-def _from_env_file(path: Path = ENV_FILE) -> str | None:
-    """Read KQL_ROOT_PATH from the .env Komachi writes, if it is there."""
+def _from_env_file(path: Path | None = None) -> str | None:
+    """The data root from the shared settings file, if it is there.
+
+    Only the root. The file also holds Komachi's purchase token, and Hase has
+    no use for one: it reads local files and reaches no service. Parsing past
+    the key it needs would make that harder to claim and easier to break.
+    """
+    # Resolved at call time, not bound as a default: a default freezes the
+    # module attribute at import, which makes the path impossible to redirect
+    # and the behaviour impossible to test.
+    path = path or ENV_FILE
     if not path.exists():
         return None
     for line in path.read_text().splitlines():
         key, _, value = line.strip().partition("=")
-        if key.strip() == "KQL_ROOT_PATH":
+        if key.strip() == ROOT_KEY:
             return value.strip().strip('"').strip("'")
     return None
 
 
+def configured_root(override: str | None = None) -> str | None:
+    """The root as settled by flag, environment or file. None if unset."""
+    return override or os.environ.get(ROOT_KEY) or _from_env_file()
+
+
 def root_path(override: str | None = None) -> Path:
-    raw = (
-        override
-        or os.environ.get("ROOT_PATH")
-        or os.environ.get("KQL_ROOT_PATH")
-        or _from_env_file()
-        or DEFAULT_ROOT
+    return Path(configured_root(override) or DEFAULT_ROOT).expanduser()
+
+
+class SetupRequired(SystemExit):
+    """Raised, and printed, when the tool has not been set up yet."""
+
+
+def run_setup(path: Path | None = None) -> None:
+    """Ask for a data root, write the settings file, show it, and stop.
+
+    The same file and the same question Komachi asks, so whichever tool a
+    reader installs first settles it for both. Stopping afterwards is
+    deliberate: setup is a different act from the command that triggered it,
+    and the next run starts from a settled state.
+
+    The file written here names only the root, which is why the whole of it can
+    be printed. Komachi's `token set` is what ever puts a credential in it, and
+    Hase has no reason to read that key.
+    """
+    import sys
+
+    path = path or ENV_FILE
+    print("hase keeps data under one root directory, shared with Komachi.")
+    print(f"Leave blank for {DEFAULT_ROOT}.\n")
+    answer = ""
+    if sys.stdin.isatty():
+        try:
+            answer = input("Data root: ").strip()
+        except EOFError:
+            answer = ""
+    resolved = Path(answer or DEFAULT_ROOT).expanduser()
+    resolved.mkdir(parents=True, exist_ok=True)
+
+    values = {ROOT_KEY: str(resolved)}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "# Kamakura Quant Lab settings. Read and edit freely.\n"
+        "# Komachi and Hase both use this file.\n\n"
+        + "".join(f"{k}={v}\n" for k, v in values.items())
     )
-    return Path(raw).expanduser()
+    path.chmod(0o600)
+
+    print(f"\nWrote {path}\n")
+    print(path.read_text().rstrip())
+    print("\nSetup done. Run hase again.")
+    raise SetupRequired(0)
 
 
 def data_path(root: Path, market: str, data_type: str, file_date: str) -> Path:

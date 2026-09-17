@@ -17,13 +17,18 @@ from hase.layout import (
     InvalidMarketError,
     available_dates,
     available_derived_dates,
+    configured_root,
     root_path,
+    run_setup,
 )
 from hase.plot import plot_order_book, plot_trades
 from hase.store import MissingDataError
 
 
 def _root(args) -> Path:
+    """The data root, running first-time setup if nothing has settled one."""
+    if configured_root(args.root) is None:
+        run_setup()
     return root_path(args.root)
 
 
@@ -139,8 +144,12 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=f"""
 data root
   Hase reads the tree Komachi writes. It finds the root from --root, then
-  ROOT_PATH or KQL_ROOT_PATH in the environment, then KQL_ROOT_PATH in a .env
-  in the current directory, and finally {DEFAULT_ROOT}.
+  ROOT_PATH in the environment, then ROOT_PATH in ~/.kamakuraquantlab.env,
+  and finally {DEFAULT_ROOT}. With none of those it asks once, writes that
+  file and stops; the next run carries on.
+
+  That file is shared with Komachi, so whichever tool is installed first
+  settles the root for both. Hase reads only the root from it.
 
   Hase holds no credential and contacts no service. If a day is missing,
   download it with komachi.
