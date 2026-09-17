@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from hase.dataset import trade_count, usable
 from hase.derive import plan, run
 from hase.derive.book_state import derive as book_state
 from hase.derive.market_price import DEGENERATE_SPREAD_BPS
@@ -244,3 +245,25 @@ def test_market_price_agrees_with_makalu(market, size):
         usable = np.isfinite(a) & np.isfinite(b)
         relative = np.abs(a[usable] - b[usable]) / np.maximum(np.abs(a[usable]), 1e-12)
         assert relative.max() < 1e-12, f"{column} drifted from the warehouse"
+
+
+# ---- what an analysis is handed ---------------------------------------------
+
+def test_usable_drops_the_rows_an_analysis_must_not_measure(make_data):
+    """A thin book and an artefact are both excluded, and by Hase not the caller."""
+    root = make_data()
+    df = market_price(root, MARKET, DATE, execution_size=0.5, degenerate_spread_bps=0.0)
+    assert len(df) == 240
+    assert usable(df).empty, "every row is degenerate at a 0 bps limit"
+
+    df = market_price(root, MARKET, DATE, execution_size=1_000.0)
+    assert usable(df).empty, "the book cannot fill this size"
+
+    df = market_price(root, MARKET, DATE, execution_size=0.5)
+    assert len(usable(df)) == 240
+
+
+def test_trade_count_reads_the_footer_and_admits_a_missing_day(root, make_data):
+    make_data(n=240)
+    assert trade_count(root, MARKET, DATE) == 240
+    assert trade_count(root, MARKET, "1999-01-01") is None

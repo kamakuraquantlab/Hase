@@ -91,3 +91,29 @@ def stored(root: Path, dataset: str, market: str, file_date: str, **params) -> b
     """Whether the day is already on disk, without reading it."""
     partition, _ = plan(dataset, **params)
     return derived_path(root, dataset, market, file_date, partition).is_file()
+
+
+def usable(frame):
+    """The rows of a MarketPrice an analysis should measure.
+
+    Filled, and not a collector artefact. Both conditions are Hase's business
+    rather than the caller's: an article asking what a trade costs should not
+    have to know that a book can be too thin to fill, nor what a degenerate
+    snapshot is.
+    """
+    return frame[frame["filled"] & ~frame["degenerate"]]
+
+
+def trade_count(root: Path, market: str, file_date: str) -> int | None:
+    """How many trades a day holds, or None if the day is not downloaded.
+
+    From the parquet footer, so it costs a file open rather than a read. The
+    count is a fact about the day that needs no derivation, and a caller
+    wanting it should not have to open a parquet file to get it.
+    """
+    import pyarrow.parquet as pq
+
+    from .layout import data_path
+
+    path = data_path(root, market, "Trade", file_date)
+    return pq.ParquetFile(path).metadata.num_rows if path.is_file() else None
