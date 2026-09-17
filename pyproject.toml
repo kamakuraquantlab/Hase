@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kamakuraquantlab-hase"
-version = "0.2.0"
+version = "0.2.1"
 description = "Kamakura Quant Lab analysis toolkit"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 
 license = "Apache-2.0"
 license-files = ["LICENSE.md"]
@@ -17,11 +17,10 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Financial and Insurance Industry",
     "Intended Audience :: Science/Research",
-    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
     "Topic :: Office/Business :: Financial :: Investment",
     "Topic :: Scientific/Engineering :: Information Analysis",
 ]
@@ -57,7 +56,7 @@ include = ["hase*"]
 
 [tool.ruff]
 line-length = 120
-target-version = "py311"
+target-version = "py313"
 
 [tool.ruff.lint]
 extend-select = ["I"]
