@@ -8,7 +8,7 @@ Named for the district where the Great Buddha sits. Komachi is where you get
 things; Hase is where you go to look at them.
 
 ```bash
-pip install -e .
+pip install kamakuraquantlab-hase
 hase local       --market COINCHECK:BTC_SPOT
 hase derive MarketPrice --market COINCHECK:BTC_SPOT --start 2025-07-01 --end 2025-07-28
 hase derive VolSpread   --market COINCHECK:BTC_SPOT --start 2025-07-01 --end 2025-07-28
