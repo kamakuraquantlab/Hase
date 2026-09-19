@@ -76,8 +76,14 @@ Komachi writes on first use, so the two tools agree without being configured
 twice — and if Hase is installed first, it asks the same question and writes
 the same file.
 
-Hase reads only the data root from it. The file also holds Komachi's purchase
-token, and Hase has no use for one.
+Hase does not work that order out for itself: it calls `komachi.data_root()`,
+which is why `kamakuraquantlab-komachi` is a dependency. Hase reads the tree
+Komachi downloads into, so Komachi is what says where the tree is. Your own
+code can ask the same way — `komachi.data_root()` with nothing passed is the
+settings file and nothing else, no environment, no default.
+
+Only the data root comes across. The file also holds Komachi's purchase token,
+and Hase has no use for one.
 
 ```
 <root>/bronze/dataset=Trade/exchange=COINCHECK/symbol=BTC_SPOT/date=2025-07-01/data.parquet

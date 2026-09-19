@@ -10,26 +10,28 @@ import argparse
 import sys
 from pathlib import Path
 
+from komachi import data_root
+from komachi.settings import DEFAULT_ROOT, ENV_FILE
+
 from hase.derive import DERIVATIONS, run as run_derivation
 from hase.layout import (
-    DEFAULT_ROOT,
     DERIVED,
     InvalidMarketError,
     available_dates,
     available_derived_dates,
-    configured_root,
-    root_path,
-    run_setup,
 )
 from hase.plot import plot_order_book, plot_trades
 from hase.store import MissingDataError
 
 
 def _root(args) -> Path:
-    """The data root, running first-time setup if nothing has settled one."""
-    if configured_root(args.root) is None:
-        run_setup()
-    return root_path(args.root)
+    """The data root, which is Komachi's to answer.
+
+    Hase reads the tree Komachi downloads into, so asking anywhere else would
+    be inventing a second answer to a question already settled. `data_root`
+    runs first-time setup when nothing has settled it, and stops.
+    """
+    return data_root(args.root, env=True, setup=True, tool="hase")
 
 
 def cmd_dates(args) -> int:
@@ -143,10 +145,10 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=f"""
 data root
-  Hase reads the tree Komachi writes. It finds the root from --root, then
-  ROOT_PATH in the environment, then ROOT_PATH in ~/.kamakuraquantlab.env,
-  and finally {DEFAULT_ROOT}. With none of those it asks once, writes that
-  file and stops; the next run carries on.
+  Hase reads the tree Komachi writes, and asks Komachi where it is: --root,
+  then ROOT_PATH in the environment, then ROOT_PATH in {ENV_FILE}. With none
+  of those it asks once, writes that file and stops; the next run carries on.
+  Default {DEFAULT_ROOT}.
 
   That file is shared with Komachi, so whichever tool is installed first
   settles the root for both. Hase reads only the root from it.

@@ -1,53 +1,44 @@
 """Plotting, and the timezone it labels with."""
 
+import argparse
 from pathlib import Path
 
 import pytest
 
-from hase.layout import available_dates, root_path
+from hase.layout import available_dates
 from hase.plot import plot_order_book, plot_trades
 from hase.store import MissingDataError, load_order_book, load_trades
 
 from conftest import DATE, MARKET
 
 
-def test_root_comes_from_the_settings_file_komachi_writes(tmp_path, monkeypatch):
-    """One file in the home directory, shared by both tools."""
-    import hase.layout as layout
+def test_the_root_is_asked_of_komachi_not_worked_out_again(tmp_path, monkeypatch):
+    """Hase reads the tree Komachi downloads into, so Komachi is what says
+    where it is. A second reader of that file is a second answer waiting to
+    disagree with the first."""
+    from komachi import settings
 
-    monkeypatch.delenv("ROOT_PATH", raising=False)
+    from hase import cli
+
     env = tmp_path / ".kamakuraquantlab.env"
     env.write_text("ROOT_PATH=/somewhere/data\nTOKEN=hk_secret\n")
-    monkeypatch.setattr(layout, "ENV_FILE", env)
+    monkeypatch.setattr(settings, "ENV_FILE", env)
+    monkeypatch.delenv(settings.ROOT_KEY, raising=False)
 
-    assert root_path(None).as_posix() == "/somewhere/data"
-    assert root_path("/explicit").as_posix() == "/explicit"  # a flag still wins
+    args = argparse.Namespace(root=None)
+    assert cli._root(args).as_posix() == "/somewhere/data"
+    args.root = "/explicit"
+    assert cli._root(args).as_posix() == "/explicit"  # a flag still wins
 
 
-def test_hase_reads_the_root_and_nothing_else_from_that_file(tmp_path, monkeypatch):
+def test_hase_reads_the_root_and_nothing_else_from_that_file():
     """The file holds Komachi's token. Hase has no use for one and must not
     grow a reason to read it."""
     import hase.layout as layout
 
-    monkeypatch.delenv("ROOT_PATH", raising=False)
-    env = tmp_path / ".kamakuraquantlab.env"
-    env.write_text("ROOT_PATH=/somewhere/data\nTOKEN=hk_secret\n")
-    monkeypatch.setattr(layout, "ENV_FILE", env)
-
-    assert layout._from_env_file(env) == "/somewhere/data"
-    source = (Path(layout.__file__)).read_text()
+    source = Path(layout.__file__).read_text()
     assert "TOKEN" not in source, "layout.py should have no notion of a token"
-
-
-def test_an_unset_root_is_reported_as_unset(tmp_path, monkeypatch):
-    """`root_path` falls back to the default; `configured_root` says there was
-    nothing to fall back from, which is what triggers setup."""
-    import hase.layout as layout
-
-    monkeypatch.delenv("ROOT_PATH", raising=False)
-    monkeypatch.setattr(layout, "ENV_FILE", tmp_path / "absent.env")
-    assert layout.configured_root() is None
-    assert root_path(None) == Path(layout.DEFAULT_ROOT).expanduser()
+    assert "ENV_FILE" not in source, "and no notion of the settings file at all"
 
 
 def test_missing_data_says_how_to_get_it(root):

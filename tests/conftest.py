@@ -60,8 +60,8 @@ def _never_touch_the_real_home(tmp_path, monkeypatch):
     directory. Without this, a test that resolves a root with nothing
     configured runs setup against the developer's home and creates a data
     directory there."""
-    import hase.layout as layout
+    from komachi import settings
 
-    monkeypatch.setattr(layout, "ENV_FILE", tmp_path / "settings.env")
-    monkeypatch.setattr(layout, "DEFAULT_ROOT", str(tmp_path / "default-data"))
-    monkeypatch.setenv(layout.ROOT_KEY, str(tmp_path / "data"))
+    monkeypatch.setattr(settings, "ENV_FILE", tmp_path / "settings.env")
+    monkeypatch.setattr(settings, "DEFAULT_ROOT", str(tmp_path / "default-data"))
+    monkeypatch.setenv(settings.ROOT_KEY, str(tmp_path / "data"))
