@@ -69,10 +69,11 @@ def read_derived(root: Path, dataset: str, market: str, file_date: str,
                  params: dict[str, str] | None = None, columns=None):
     """Read one day of a derived dataset, or say how to make it.
 
-    The frame comes back wider than it was written: pyarrow recovers
-    `dataset`, `exchange`, `symbol`, `date` and any parameter partition from
-    the directory names. That is the point of matching the warehouse layout, so
-    they are left in rather than dropped.
+    Whether the frame comes back wider than it was written depends on the
+    reader: pyarrow recovered `dataset`, `exchange`, `symbol`, `date` and any
+    parameter partition from the directory names up to 22 and stops at 25, and
+    both are allowed by our floor of 15. Read a directory rather than a file to
+    get them for certain. Nothing here drops them, and nothing here needs them.
     """
     import pyarrow.parquet as pq
 
