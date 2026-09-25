@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kamakuraquantlab-hase"
-version = "0.4.1"
+version = "0.5.0"
 description = "Kamakura Quant Lab analysis toolkit"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -26,7 +26,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "kamakuraquantlab-komachi>=0.6.0",
+    "kamakuraquantlab-komachi>=0.7.0",
     "pyarrow>=15.0",
     "pandas>=2.0",
     "numpy",

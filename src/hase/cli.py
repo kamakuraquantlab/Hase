@@ -18,7 +18,6 @@ from hase.derive import DERIVATIONS, run as run_derivation
 from hase.layout import (
     DERIVED,
     InvalidMarketError,
-    available_dates,
     available_derived_dates,
 )
 from hase.plot import plot_order_book, plot_trades
@@ -35,28 +34,6 @@ def _root(args) -> Path:
     return data_root(args.root, env=True, setup=True, tool="hase")
 
 
-def cmd_dates(args) -> int:
-    """Which bronze days are here, as Komachi reports them.
-
-    Komachi writes bronze and owns the question; Hase asks rather than
-    walking the tree, so the two can never disagree about what is held.
-    Still no API call: `komachi.bronze` reads the disk.
-    """
-    root = _root(args)
-    print(f"{args.market}   {root}\n")
-    for data_type, held in komachi.bronze.market_state(args.market, root).items():
-        if not held.days:
-            print(f"{data_type:10} nothing downloaded")
-            continue
-        gaps = held.gaps
-        note = "" if not gaps else (
-            f"   missing {'; '.join(a if a == b else f'{a}..{b}' for a, b in gaps[:2])}"
-            f"{f' +{len(gaps) - 2} more' if len(gaps) > 2 else ''}")
-        print(f"{data_type:10} {held.days:>4} day(s)  {held.first} .. {held.last}{note}")
-    print(f"\nFetch more with:  komachi download --market {args.market} --start DATE")
-    return 0
-
-
 def _date_range(start: str, end: str) -> list[str]:
     import datetime as dt
 
@@ -66,10 +43,29 @@ def _date_range(start: str, end: str) -> list[str]:
     return [(lo + dt.timedelta(days=i)).isoformat() for i in range((hi - lo).days + 1)]
 
 
+def _wanted_days(args) -> list[str]:
+    """The JST days a derive covers, from --days or --end.
+
+    The same two ways of ending a range that Komachi takes, and the same
+    refusal to accept both: they say one thing, so one would have to silently
+    win. A buyer moving between the two tools should not have to remember
+    which verb wants which.
+    """
+    import datetime as dt
+
+    if args.end and args.days:
+        raise SystemExit("Give --days or --end, not both: they say the same thing.")
+    if args.end:
+        return _date_range(args.start, args.end)
+    span = max(args.days or 1, 1)
+    last = (dt.date.fromisoformat(args.start) + dt.timedelta(days=span - 1)).isoformat()
+    return _date_range(args.start, last)
+
+
 def cmd_derive(args) -> int:
     """Compute a dataset for a range of days, skipping what is already there."""
     root = _root(args)
-    wanted = _date_range(args.start, args.end or args.start)
+    wanted = _wanted_days(args)
     made = skipped = missing = 0
     for file_date in wanted:
         try:
@@ -97,13 +93,42 @@ def cmd_derive(args) -> int:
     return 1 if made == 0 and skipped == 0 else 0
 
 
+def _periods(dates: list[str]) -> str:
+    """Consecutive dates as spans, so a gap is visible rather than implied.
+
+    Three days in January and a month in June is 33 days in two stretches;
+    printing the outer bounds says six months, and that is the line a reader
+    uses to decide what still needs downloading or deriving.
+    """
+    import datetime as dt
+
+    if not dates:
+        return ""
+    days = sorted({dt.date.fromisoformat(d) for d in dates})
+    spans, first, last = [], days[0], days[0]
+    for day in days[1:]:
+        if (day - last).days == 1:
+            last = day
+            continue
+        spans.append((first, last))
+        first = last = day
+    spans.append((first, last))
+    text = "; ".join(a.isoformat() if a == b else f"{a} .. {b}" for a, b in spans[:3])
+    return text if len(spans) <= 3 else f"{text}; +{len(spans) - 3} more"
+
+
 def cmd_local(args) -> int:
-    """What has been downloaded and what has been derived from it."""
+    """What has been downloaded and what has been derived from it.
+
+    Bronze comes from Komachi, which writes that layer and therefore answers
+    for it; the derived rows are Hase's own. One command: `dates` reported the
+    bronze half and nothing else, which left two ways to ask one question.
+    """
     root = _root(args)
     print(f"{args.market}   {root}\n")
-    for data_type in ("Trade", "OrderBook"):
-        dates = available_dates(root, args.market, data_type)
-        state = f"{len(dates):>4} day(s)  {dates[0]} .. {dates[-1]}" if dates else "   nothing downloaded"
+    for data_type, held in komachi.bronze.market_state(args.market, root).items():
+        state = (f"{held.days:>4} day(s)  {_periods(held.dates)}" if held.days
+                 else "   nothing downloaded")
         print(f"bronze  {data_type:12} {state}")
     for dataset in sorted(DERIVED):
         layer = DERIVED[dataset][0]
@@ -112,7 +137,7 @@ def cmd_local(args) -> int:
             if not dates:
                 continue
             label = " ".join(f"{k}={v}" for k, v in params.items()) or ""
-            print(f"{layer:7} {dataset:12} {len(dates):>4} day(s)  {dates[0]} .. {dates[-1]}  {label}")
+            print(f"{layer:7} {dataset:12} {len(dates):>4} day(s)  {_periods(dates)}  {label}")
     return 0
 
 
@@ -170,18 +195,18 @@ dates
   A date is an Asia/Tokyo day, matching how the data is partitioned.
   Timestamps inside the files are UTC epochs; plots are labelled in JST.
 """)
-    parser.add_argument("--root", help=f"Data root. Default {DEFAULT_ROOT}")
+    # Hidden, like Komachi's. It still works and is what makes a second root
+    # possible; the settings file is where a buyer changes it, and listing a
+    # developer switch at the top of every --help made it the first thing read.
+    parser.add_argument("--root", help=argparse.SUPPRESS)
     sub = parser.add_subparsers(dest="command", required=True)
-
-    p = sub.add_parser("dates", help="What is downloaded for a market")
-    p.add_argument("--market", required=True)
-    p.set_defaults(func=cmd_dates)
 
     p = sub.add_parser("derive", help="Compute a silver or gold dataset from bronze")
     p.add_argument("dataset", choices=sorted(DERIVATIONS))
     p.add_argument("--market", required=True)
-    p.add_argument("--start", required=True, help="JST day, YYYY-MM-DD")
-    p.add_argument("--end", help="JST day. Defaults to --start")
+    p.add_argument("--start", required=True, help="First JST day, YYYY-MM-DD")
+    p.add_argument("--days", type=int, help="How many days from --start. Default 1")
+    p.add_argument("--end", help="Last JST day, inclusive. Use instead of --days")
     p.add_argument("--recreate", action="store_true", help="Rebuild days that already exist")
     p.add_argument("--execution-size", type=float,
                    help="MarketPrice: trade size in base currency, e.g. 0.002")
