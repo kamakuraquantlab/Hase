@@ -1,13 +1,16 @@
 """The derivations, and the one property that matters most about them.
 
-Hase reimplements what Makalu computes rather than importing it, because
-`system/04_hase-analysis-toolkit.md` section 3 forbids a customer tool from
-depending on trading code. Reimplementation is only safe if it agrees, so the
-last test here checks Hase against Makalu's own stored output when that
-warehouse is present, and skips when it is not.
+Hase reimplements what the seller's own pipeline computes rather than
+importing it: a customer tool must not depend on trading code.
+Reimplementation is only safe if it agrees, so the last test here checks Hase
+against that pipeline's stored output when the warehouse is mounted, and skips
+when it is not -- which is everywhere but the seller's own machine.
+
+Point `HASE_WAREHOUSE` at it to run those; without it they skip.
 """
 
 import math
+import os
 from pathlib import Path
 
 import pytest
@@ -23,7 +26,9 @@ from hase.store import MissingDataError, read_derived
 
 MARKET = "COINCHECK:BTC_SPOT"
 DATE = "2025-07-01"
-WAREHOUSE = Path("/panda/makalu-data")
+# Read from the environment rather than written here: the path is the seller's
+# own mount and means nothing to anyone else reading this package.
+WAREHOUSE = Path(os.environ.get("HASE_WAREHOUSE", "/nonexistent"))
 
 
 # ---- BookState -------------------------------------------------------------
@@ -205,8 +210,8 @@ def test_reading_something_underived_says_how_to_derive_it(root):
 
 @pytest.mark.skipif(not WAREHOUSE.is_dir(), reason="the seller's warehouse is not mounted")
 @pytest.mark.parametrize("market,size", [("COINCHECK:BTC_SPOT", 0.002), ("GMO:BTC_JPY", 0.002)])
-def test_market_price_agrees_with_makalu(market, size):
-    """Hase reimplements Makalu's walk; it has to land in the same place.
+def test_market_price_agrees_with_the_warehouse(market, size):
+    """Hase reimplements the same walk; it has to land in the same place.
 
     Matched on timestamp rather than position, and not required to be a total
     match. The warehouse file was written at some point in the past and the

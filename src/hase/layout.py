@@ -12,6 +12,8 @@ credential, and knows nothing about entitlement.
 import re
 from pathlib import Path
 
+import komachi.bronze
+
 BRONZE = "bronze"
 SILVER = "silver"
 GOLD = "gold"
@@ -52,14 +54,17 @@ def data_path(root: Path, market: str, data_type: str, file_date: str) -> Path:
 
 
 def available_dates(root: Path, market: str, data_type: str) -> list[str]:
-    exchange, symbol = parse_market(market)
-    base = root / BRONZE / f"dataset={data_type}" / f"exchange={exchange}" / f"symbol={symbol}"
-    if not base.is_dir():
-        return []
-    return sorted(
-        d.name.split("=", 1)[1] for d in base.glob("date=*") if (d / "data.parquet").is_file()
-    )
+    """Which bronze dates are on disk, asked of Komachi rather than the tree.
 
+    Komachi writes bronze, so Komachi says what is in it. Hase walked the
+    directories itself, which meant two implementations of one question: a
+    change to the layout, to the partition names, or to what counts as a
+    complete day had to land in both, and the day they disagreed would be the
+    day a derivation quietly skipped a date the downloader believed it had.
+
+    Komachi is a dependency of this package, so it is always there to ask.
+    """
+    return komachi.bronze.dates(market, data_type, root)
 
 def derived_path(root: Path, dataset: str, market: str, file_date: str,
                  params: dict[str, str] | None = None) -> Path:

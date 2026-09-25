@@ -10,6 +10,7 @@ import argparse
 import sys
 from pathlib import Path
 
+import komachi.bronze
 from komachi import data_root
 from komachi.settings import DEFAULT_ROOT, ENV_FILE
 
@@ -35,15 +36,24 @@ def _root(args) -> Path:
 
 
 def cmd_dates(args) -> int:
-    """What is available locally. Hase never asks the API."""
+    """Which bronze days are here, as Komachi reports them.
+
+    Komachi writes bronze and owns the question; Hase asks rather than
+    walking the tree, so the two can never disagree about what is held.
+    Still no API call: `komachi.bronze` reads the disk.
+    """
     root = _root(args)
     print(f"{args.market}   {root}\n")
-    for data_type in ("Trade", "OrderBook"):
-        dates = available_dates(root, args.market, data_type)
-        if dates:
-            print(f"{data_type:10} {len(dates):>4} day(s)  {dates[0]} .. {dates[-1]}")
-        else:
+    for data_type, held in komachi.bronze.market_state(args.market, root).items():
+        if not held.days:
             print(f"{data_type:10} nothing downloaded")
+            continue
+        gaps = held.gaps
+        note = "" if not gaps else (
+            f"   missing {'; '.join(a if a == b else f'{a}..{b}' for a, b in gaps[:2])}"
+            f"{f' +{len(gaps) - 2} more' if len(gaps) > 2 else ''}")
+        print(f"{data_type:10} {held.days:>4} day(s)  {held.first} .. {held.last}{note}")
+    print(f"\nFetch more with:  komachi download --market {args.market} --start DATE")
     return 0
 
 
