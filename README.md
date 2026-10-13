@@ -57,6 +57,31 @@ mounted, and skips where it is not. Measured on a full day of
 4e-16 — floating-point last-bit, from accumulating the levels in a different
 order.
 
+## Bronze as trading data
+
+For code that trades rather than plots -- a backtest, a strategy's research
+notebook -- `hase.bronze` returns [qate](https://github.com/kamakuraquantlab/qate)'s
+objects rather than dataframes:
+
+```python
+from hase import bronze
+from hase.bronze import DataType
+from qate.core.model import Market
+
+market = Market.from_str("BINANCE:BTC_USDT")
+bronze.markets()                                    # [Market, ...] on disk
+bronze.dates(market, DataType.ORDER_BOOK)           # complete JST days
+books = bronze.load(market, DataType.ORDER_BOOK, "2026-09-01", "2026-09-07")
+```
+
+`load` is strict: a missing day raises rather than reading as a quiet market.
+`load_day` is the same for one day.
+
+Hase asks Komachi which file holds each market-day (`komachi.bronze.file`)
+and opens it; Komachi never looks inside a file, and Hase never builds a bronze
+path. That is the whole division: Komachi places files, Hase reads them as
+trading data.
+
 ## It holds no credential
 
 Hase reads local files. It reaches no API, holds no token, and knows nothing

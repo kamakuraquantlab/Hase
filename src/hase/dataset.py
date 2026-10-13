@@ -111,9 +111,11 @@ def trade_count(root: Path, market: str, file_date: str) -> int | None:
     count is a fact about the day that needs no derivation, and a caller
     wanting it should not have to open a parquet file to get it.
     """
+    import komachi.bronze
     import pyarrow.parquet as pq
 
-    from .layout import data_path
-
-    path = data_path(root, market, "Trade", file_date)
-    return pq.ParquetFile(path).metadata.num_rows if path.is_file() else None
+    try:
+        path = komachi.bronze.file(market, "Trade", file_date, root)
+    except komachi.bronze.MissingData:
+        return None
+    return pq.ParquetFile(path).metadata.num_rows

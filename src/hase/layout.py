@@ -1,6 +1,10 @@
 """Reading the tree Komachi writes.
 
-Paths only. Where the tree *is* was duplicated here once, and two readers of
+Paths only. Bronze addresses are Komachi's, imported rather than rebuilt: a
+second copy of the partition scheme is a second thing to keep in step. Silver
+and gold are Hase's, and follow the same scheme beside bronze.
+
+Where the tree *is* was duplicated here once, and two readers of
 one settings file is one reader too many: `komachi.data_root` is now the only
 answer, and the CLI is where Hase asks it. Every function here takes the root
 it was given.
@@ -9,15 +13,16 @@ The rule this module obeys: Hase reads local files. It reaches no API, holds no
 credential, and knows nothing about entitlement.
 """
 
-import re
 from pathlib import Path
 
 import komachi.bronze
 
-BRONZE = "bronze"
+# The bronze path schema is Komachi's: it places the files. Re-exported so Hase
+# code and tests have one import, not so Hase can have an opinion about it.
+from komachi.layout import BRONZE, DATA_TYPES, InvalidMarketError, data_path, parse_market  # noqa: F401
+
 SILVER = "silver"
 GOLD = "gold"
-DATA_TYPES = ("Trade", "OrderBook")
 
 # Where each derived dataset lives, and which bronze dataset it is built from.
 # Silver is point-in-time and derived per market; gold is windowed and carries
@@ -27,30 +32,6 @@ DERIVED = {
     "MarketPrice": (SILVER, "OrderBook"),
     "VolSpread": (GOLD, "OrderBook"),
 }
-_MARKET_RE = re.compile(r"^[A-Z0-9]+:[A-Z0-9_]+$")
-
-
-class InvalidMarketError(ValueError):
-    pass
-
-
-def parse_market(market: str) -> tuple[str, str]:
-    if not _MARKET_RE.match(market or ""):
-        raise InvalidMarketError(f"Market must look like EXCHANGE:SYMBOL, got {market!r}")
-    exchange, symbol = market.split(":", 1)
-    return exchange, symbol
-
-
-
-
-
-
-def data_path(root: Path, market: str, data_type: str, file_date: str) -> Path:
-    exchange, symbol = parse_market(market)
-    return (
-        root / BRONZE / f"dataset={data_type}" / f"exchange={exchange}"
-        / f"symbol={symbol}" / f"date={file_date}" / "data.parquet"
-    )
 
 
 def available_dates(root: Path, market: str, data_type: str) -> list[str]:

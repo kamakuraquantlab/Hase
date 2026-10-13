@@ -2,7 +2,9 @@
 
 from pathlib import Path
 
-from .layout import data_path, derived_path
+import komachi.bronze
+
+from .layout import derived_path
 
 
 class MissingDataError(FileNotFoundError):
@@ -10,16 +12,15 @@ class MissingDataError(FileNotFoundError):
 
 
 def _read(root: Path, market: str, data_type: str, file_date: str, columns=None):
+    """Open a bronze file Komachi vouches for. Which file, and whether the day is
+    complete, is Komachi's answer; what is in it is Hase's."""
     import pandas as pd
     import pyarrow.parquet as pq
 
-    path = data_path(root, market, data_type, file_date)
-    if not path.is_file():
-        raise MissingDataError(
-            f"No {data_type} for {market} on {file_date} under {root}. "
-            f"Download it first:  komachi download --market {market} "
-            f"--start {file_date} --end {file_date}"
-        )
+    try:
+        path = komachi.bronze.file(market, data_type, file_date, root)
+    except komachi.bronze.MissingData as e:
+        raise MissingDataError(str(e)) from e
     df = pq.read_table(path, columns=columns).to_pandas()
     # ts is a UTC epoch; the partition date is a Tokyo day. Converting here
     # means every plot is labelled in the timezone the day was cut in.
