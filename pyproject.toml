@@ -27,7 +27,7 @@ classifiers = [
 
 dependencies = [
     "kamakuraquantlab-komachi>=0.8.0",
-    "kamakuraquantlab-qate>=0.1",
+    "kamakuraquantlab-qate>=0.2",
     "pyarrow>=15.0",
     "pandas>=2.0",
     "numpy",
