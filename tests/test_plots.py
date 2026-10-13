@@ -7,7 +7,7 @@ import pytest
 
 from hase.layout import available_dates
 from hase.plot import plot_order_book, plot_trades
-from hase.store import MissingDataError, load_order_book, load_trades
+from hase.store import MissingDataError, book_depth, load_order_book, load_trades
 
 from conftest import DATE, MARKET
 
@@ -60,6 +60,18 @@ def test_order_book_reads_only_the_levels_asked_for(root, make_data):
     df = load_order_book(root, MARKET, DATE, depth=1)
     assert set(df.columns) == {"ts", "bid0_price", "bid0_qty", "ask0_price", "ask0_qty", "time"}
 
+
+
+def test_order_book_without_a_depth_reads_every_level(root, make_data):
+    """A backtest replays the whole book, however deep this venue's file is."""
+    make_data()
+    df = load_order_book(root, MARKET, DATE, depth=None)
+    assert book_depth(df.columns) == 20  # what conftest writes
+
+
+def test_book_depth_reads_the_columns():
+    assert book_depth(["ts", "bid0_price", "ask0_price", "bid1_price", "ask1_price"]) == 2
+    assert book_depth(["ts", "side", "price", "size"]) == 0
 
 def test_available_dates_lists_what_is_downloaded(root, make_data):
     make_data(file_date="2025-07-01")

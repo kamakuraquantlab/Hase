@@ -32,17 +32,32 @@ def load_trades(root: Path, market: str, file_date: str):
     return _read(root, market, "Trade", file_date)
 
 
-def load_order_book(root: Path, market: str, file_date: str, depth: int = 1):
+def load_order_book(root: Path, market: str, file_date: str, depth: int | None = 1):
     """Order book, reading only the levels asked for.
 
     A day is 230,000 rows across 81 columns and around 35 MB. Best bid and ask
     need four of those columns, so reading them all would cost roughly twenty
     times the memory for nothing.
+
+    `depth=None` reads every level the file holds, for a reader that replays the
+    whole book -- a backtest. How many that is differs by venue and has changed
+    across the archive, so it is not assumed; `book_depth` says what came back.
     """
-    columns = ["ts"]
-    for i in range(depth):
-        columns += [f"bid{i}_price", f"bid{i}_qty", f"ask{i}_price", f"ask{i}_qty"]
+    columns = None
+    if depth is not None:
+        columns = ["ts"]
+        for i in range(depth):
+            columns += [f"bid{i}_price", f"bid{i}_qty", f"ask{i}_price", f"ask{i}_qty"]
     return _read(root, market, "OrderBook", file_date, columns=columns)
+
+
+def book_depth(columns) -> int:
+    """How many levels an order book frame holds, from its column names."""
+    names = set(columns)
+    depth = 0
+    while f"bid{depth}_price" in names and f"ask{depth}_price" in names:
+        depth += 1
+    return depth
 
 
 def write_derived(root: Path, dataset: str, market: str, file_date: str, frame,
