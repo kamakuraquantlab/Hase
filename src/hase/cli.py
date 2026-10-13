@@ -1,6 +1,7 @@
 """Hase CLI.
 
-Run as: python src/cli.py <command> [options]
+Run as: hase <command> [options], or from a checkout:
+PYTHONPATH=src python -m hase.cli <command> [options]
 
 Reads the data Komachi downloaded, derives what the articles need from it,
 and draws it.
