@@ -86,6 +86,45 @@ def test_a_short_book_stops_at_the_absent_level(root):
     assert (len(book.bids), len(book.asks)) == (2, 1)
 
 
+def test_rows_of_different_depths_each_stop_at_their_own_absent_level(root):
+    """Depth is found for the whole frame at once; it must still be each row's own.
+
+    Rows of mixed depth make the level columns hold NaN in some rows, and a
+    column that is null in every row reads back as None: both are absent.
+    """
+    depth = 4
+    write_parquet(root, DataType.ORDER_BOOK, MARKET, DATE, [
+        book_row(100.0, [(99.0, 1.0), (98.0, 2.0), (97.0, 3.0)], [(101.0, 1.0)], depth),
+        book_row(101.0, [(99.5, 1.0)], [(101.5, 1.0), (102.5, 2.0)], depth),
+        book_row(102.0, [], [(103.0, 1.0), (104.0, 2.0), (105.0, 3.0)], depth),
+    ], book_columns(depth))
+
+    books = bronze.load_day(MARKET, DataType.ORDER_BOOK, DATE, root)
+    assert [[(lv.price, lv.amount) for lv in b.bids] for b in books] == [
+        [(99.0, 1.0), (98.0, 2.0), (97.0, 3.0)], [(99.5, 1.0)], []]
+    assert [[lv.price for lv in b.asks] for b in books] == [[101.0], [101.5, 102.5], [103.0, 104.0, 105.0]]
+    assert all(type(lv.price) is float for b in books for lv in b.bids + b.asks)
+
+
+def test_a_recorded_book_computes_each_market_price_once(root):
+    """Recorded books never change, so the answer is shared -- and is the same answer."""
+    from qate.core.model import OrderBook
+
+    depth = 3
+    write_parquet(root, DataType.ORDER_BOOK, MARKET, DATE, [
+        book_row(100.0, [(99.0, 1.0), (98.0, 2.0), (97.0, 3.0)], [(101.0, 1.5), (102.0, 2.5), (103.0, 3.5)], depth),
+    ], book_columns(depth))
+    [book] = bronze.load_day(MARKET, DataType.ORDER_BOOK, DATE, root)
+
+    assert isinstance(book, OrderBook)
+    first = book.market_price(2.0)
+    assert book.market_price(2.0) is first
+    assert first == OrderBook.market_price(book, 2.0)
+    assert book.market_price(1.0) == OrderBook.market_price(book, 1.0)
+    assert book.market_price(100.0) is None   # more than the book holds, and remembered as such
+    assert book.market_price(100.0) is None
+
+
 def test_a_book_file_with_no_levels_is_an_error(root):
     write_parquet(root, DataType.ORDER_BOOK, MARKET, DATE, [{"ts": 1.0}], ["ts"])
     with pytest.raises(bronze.MalformedDataError):

@@ -38,7 +38,8 @@ from pathlib import Path
 
 import komachi
 import komachi.bronze
-from qate.core.model import Market, OrderBook, OrderLevel, Side, Trade
+import numpy as np
+from qate.core.model import Market, MarketPrice, OrderBook, OrderLevel, Side, Trade
 
 from . import store
 from .store import MissingDataError, book_depth  # noqa: F401  (raised by load, so importable here)
@@ -139,6 +140,32 @@ def to_trades(df, market: Market) -> list[Trade]:
     ]
 
 
+_UNSET = object()
+
+
+class RecordedOrderBook(OrderBook):
+    """An `OrderBook` read from bronze: recorded, so it never changes.
+
+    That makes `market_price` safe to compute once per size and hand to every
+    reader. A backtest sweep replays each book through dozens of parameter sets
+    that ask the same book for the same size; computing it once saved most of
+    the time spent walking levels. A live book may be updated in place, so the
+    cache is here, on what can only be a recording, not on `OrderBook`.
+
+    Callers must not mutate the `MarketPrice` they get back: it is shared.
+    """
+
+    def market_price(self, target_size: float) -> MarketPrice | None:
+        cache = self.__dict__.get("_market_prices")
+        if cache is None:
+            cache = self.__dict__.setdefault("_market_prices", {})
+        price = cache.get(target_size, _UNSET)
+        if price is _UNSET:
+            # Two readers may both compute it; they get equal answers.
+            price = cache[target_size] = OrderBook.market_price(self, target_size)
+        return price
+
+
 def to_order_books(df, market: Market) -> list[OrderBook]:
     """A bronze order book frame as `OrderBook`s, at whatever depth it holds."""
     if df.empty:
@@ -149,36 +176,36 @@ def to_order_books(df, market: Market) -> list[OrderBook]:
             f"OrderBook frame for {market.id} has no bid/ask level columns: {list(df.columns)[:8]}"
         )
     symbol, exchange_name = market.symbol, market.exchange_name
-
-    # Read by position, not by name: itertuples over 80+ named columns is
-    # measurably slower, and a full-depth day is millions of rows.
-    ordered = ["ts"]
-    for side in ("bid", "ask"):
-        for i in range(depth):
-            ordered += [f"{side}{i}_price", f"{side}{i}_qty"]
-    ask_start = 1 + 2 * depth
+    bids = _side_levels(df, "bid", depth)
+    asks = _side_levels(df, "ask", depth)
     return [
-        OrderBook(_levels(row, 1, depth), _levels(row, ask_start, depth), symbol, exchange_name, row[0])
-        for row in df[ordered].itertuples(index=False, name=None)
+        RecordedOrderBook(b, a, symbol, exchange_name, ts)
+        for b, a, ts in zip(bids, asks, df["ts"].tolist())
     ]
 
 
-def _levels(row: tuple, start: int, depth: int) -> list[OrderLevel]:
-    """Price/qty pairs from `start`, stopping at the first absent level.
+def _side_levels(df, side: str, depth: int) -> list[list[OrderLevel]]:
+    """Each row's levels on one side, stopping at the row's first absent level.
 
     Absent levels are only ever a tail: a book with four levels fills 0-3 and
     leaves the rest null. Stopping is right -- levels below the touch are not
     optional, and a book with a hole in it is not a book.
 
-    Both spellings of absent are handled. `price != price` is the NaN test,
-    cheaper than `math.isnan` in a loop this hot, and it does not catch `None` --
-    which is what a wholly-null column reads back as.
+    A day of full-depth books is millions of levels, so the work is split by
+    what is fast where. How many levels each row keeps is found for the whole
+    frame at once; `notna` covers both spellings of absent -- NaN in a float
+    column, `None` in one that was wholly null. The levels are then built a row
+    at a time with `map`, from columns turned into Python values by `tolist`,
+    which gives the same floats (and `None`s) a row-by-row read did.
     """
-    levels = []
-    for i in range(depth):
-        price = row[start + 2 * i]
-        if price is None or price != price:  # noqa: PLR0124
-            break
-        levels.append(OrderLevel(price, row[start + 2 * i + 1]))
-    return levels
+    price_cols = [df[f"{side}{i}_price"] for i in range(depth)]
+    present = np.column_stack([col.notna().to_numpy() for col in price_cols])
+    kept = np.where(present.all(axis=1), depth, present.argmin(axis=1)).tolist()
+
+    prices = zip(*(col.tolist() for col in price_cols))
+    qtys = zip(*(df[f"{side}{i}_qty"].tolist() for i in range(depth)))
+    return [
+        list(map(OrderLevel, p, q)) if k == depth else list(map(OrderLevel, p[:k], q[:k]))
+        for p, q, k in zip(prices, qtys, kept)
+    ]
 
