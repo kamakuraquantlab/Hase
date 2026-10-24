@@ -46,15 +46,26 @@ def plan(dataset: str, *, execution_size=None, execution_notional=None, step=Non
     raise ValueError(f"Unknown dataset {dataset!r}. Known: {', '.join(DERIVATIONS)}")
 
 
-def run(root: Path, dataset: str, market: str, file_date: str, *, recreate: bool = False,
-        execution_size=None, execution_notional=None, step=None, lookback=None) -> tuple[Path, bool]:
+def run(
+    root: Path,
+    dataset: str,
+    market: str,
+    file_date: str,
+    *,
+    recreate: bool = False,
+    execution_size=None,
+    execution_notional=None,
+    step=None,
+    lookback=None,
+) -> tuple[Path, bool]:
     """Derive one market-day. Returns the path and whether it was computed.
 
     Existing output is left alone unless `recreate`: re-running a range to
     fill a gap should cost the gap, not the range.
     """
-    params, kwargs = plan(dataset, execution_size=execution_size,
-                          execution_notional=execution_notional, step=step, lookback=lookback)
+    params, kwargs = plan(
+        dataset, execution_size=execution_size, execution_notional=execution_notional, step=step, lookback=lookback
+    )
     path = derived_path(root, dataset, market, file_date, params)
     if path.is_file() and not recreate:
         return path, False

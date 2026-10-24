@@ -6,8 +6,7 @@ from ..store import load_order_book
 from . import style
 
 
-def plot_order_book(root: Path, market: str, file_date: str, output: str,
-                    resample: str | None = "1s") -> Path:
+def plot_order_book(root: Path, market: str, file_date: str, output: str, resample: str | None = "1s") -> Path:
     """Best bid and ask over the day, with the spread beneath.
 
     Resampled by default. A day is around 230,000 snapshots, which is more
@@ -30,8 +29,7 @@ def plot_order_book(root: Path, market: str, file_date: str, output: str,
 
     book_ax.plot(df.index, df["ask0_price"], color=style.ASK, linewidth=0.8, label="best ask")
     book_ax.plot(df.index, df["bid0_price"], color=style.BID, linewidth=0.8, label="best bid")
-    book_ax.fill_between(df.index, df["bid0_price"], df["ask0_price"],
-                         color=style.MUTED, alpha=0.15, linewidth=0)
+    book_ax.fill_between(df.index, df["bid0_price"], df["ask0_price"], color=style.MUTED, alpha=0.15, linewidth=0)
     style.finish(book_ax, title=f"{market}   {file_date}  (JST)", ylabel="price", legend=True)
 
     spread = df["ask0_price"] - df["bid0_price"]
@@ -47,12 +45,18 @@ def plot_order_book(root: Path, market: str, file_date: str, output: str,
     if above and cap > 0:
         spread_ax.set_ylim(0, cap * 1.15)
         spread_ax.text(
-            0.995, 0.88, f"{above:,} point(s) above {cap:,.0f}",
-            transform=spread_ax.transAxes, ha="right", fontsize=8, color=style.MUTED,
+            0.995,
+            0.88,
+            f"{above:,} point(s) above {cap:,.0f}",
+            transform=spread_ax.transAxes,
+            ha="right",
+            fontsize=8,
+            color=style.MUTED,
         )
     style.finish(spread_ax, ylabel="spread")
     spread_ax.set_xlabel(
         f"{len(df):,} points" + (f", resampled {resample}" if resample else ", every snapshot"),
-        color=style.MUTED, fontsize=9,
+        color=style.MUTED,
+        fontsize=9,
     )
     return style.save(fig, output)

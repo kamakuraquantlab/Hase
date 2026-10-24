@@ -47,8 +47,8 @@ def available_dates(root: Path, market: str, data_type: str) -> list[str]:
     """
     return komachi.bronze.dates(market, data_type, root)
 
-def derived_path(root: Path, dataset: str, market: str, file_date: str,
-                 params: dict[str, str] | None = None) -> Path:
+
+def derived_path(root: Path, dataset: str, market: str, file_date: str, params: dict[str, str] | None = None) -> Path:
     """Where a derived dataset lands, mirroring the warehouse exactly.
 
     Derived output sits beside `bronze/` under the same root rather than in a
@@ -78,11 +78,8 @@ def source_of(dataset: str) -> str:
     return DERIVED[dataset][1]
 
 
-def available_derived_dates(root: Path, dataset: str, market: str,
-                            params: dict[str, str] | None = None) -> list[str]:
+def available_derived_dates(root: Path, dataset: str, market: str, params: dict[str, str] | None = None) -> list[str]:
     base = derived_path(root, dataset, market, "X", params).parent.parent
     if not base.is_dir():
         return []
-    return sorted(
-        d.name.split("=", 1)[1] for d in base.glob("date=*") if (d / "data.parquet").is_file()
-    )
+    return sorted(d.name.split("=", 1)[1] for d in base.glob("date=*") if (d / "data.parquet").is_file())

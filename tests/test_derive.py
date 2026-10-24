@@ -20,7 +20,8 @@ from hase.derive import plan, run
 from hase.derive.book_state import derive as book_state
 from hase.derive.market_price import DEGENERATE_SPREAD_BPS
 from hase.derive.market_price import derive as market_price
-from hase.derive.vol_spread import DAY, derive as vol_spread, realized_vol_bps
+from hase.derive.vol_spread import DAY, realized_vol_bps
+from hase.derive.vol_spread import derive as vol_spread
 from hase.layout import derived_path
 from hase.store import MissingDataError, read_derived
 
@@ -32,6 +33,7 @@ WAREHOUSE = Path(os.environ.get("HASE_WAREHOUSE", "/nonexistent"))
 
 
 # ---- BookState -------------------------------------------------------------
+
 
 def test_book_state_derives_mid_and_spread(make_data):
     root = make_data()
@@ -62,8 +64,8 @@ def test_book_state_drops_a_crossed_book(root, make_data):
     # writing those back collides with the originals.
     own = pq.ParquetFile(path).schema_arrow.names
     table = pq.read_table(path, columns=own).to_pydict()
-    table["ask0_price"][5] = table["bid0_price"][5] - 1.0     # crossed
-    table["bid0_price"][6] = 0.0                              # empty
+    table["ask0_price"][5] = table["bid0_price"][5] - 1.0  # crossed
+    table["bid0_price"][6] = 0.0  # empty
     pq.write_table(pa.Table.from_pydict(table), path)
 
     df = book_state(root, MARKET, DATE)
@@ -80,14 +82,15 @@ def test_book_state_reports_the_thinner_side_as_depth():
 
 # ---- MarketPrice -----------------------------------------------------------
 
+
 def test_market_price_walks_deeper_than_the_quote(make_data):
     """The whole point of the dataset: size costs more than the top of book."""
     root = make_data()
     quote = book_state(root, MARKET, DATE)["spread_bps"].median()
     small = market_price(root, MARKET, DATE, execution_size=0.5)["spread_bps"].median()
     large = market_price(root, MARKET, DATE, execution_size=8.0)["spread_bps"].median()
-    assert small == pytest.approx(quote)      # inside the first level
-    assert large > small                       # walked into the book
+    assert small == pytest.approx(quote)  # inside the first level
+    assert large > small  # walked into the book
 
 
 def test_market_price_will_not_price_a_size_the_book_cannot_fill(make_data):
@@ -125,7 +128,7 @@ def test_a_notional_fills_from_a_book_that_is_padded_with_empty_levels(root, mak
     path = data_path(root, MARKET, "OrderBook", DATE)
     own = pq.ParquetFile(path).schema_arrow.names
     table = pq.read_table(path, columns=own).to_pydict()
-    for level in range(3, 20):                     # only three real levels
+    for level in range(3, 20):  # only three real levels
         n = len(table["ts"])
         for side in ("bid", "ask"):
             table[f"{side}{level}_price"] = [0.0] * n
@@ -151,17 +154,18 @@ def test_size_and_notional_are_different_partitions():
 
 # ---- VolSpread -------------------------------------------------------------
 
+
 def test_vol_spread_fills_a_whole_tokyo_day(make_data):
     root = make_data()
     df = vol_spread(root, MARKET, DATE)
     assert len(df) == DAY
     assert df["sec"].iloc[0] == 0 and df["sec"].iloc[-1] == DAY - 1
-    assert df["mid"].notna().sum() == DAY       # first snapshot is at second 0
+    assert df["mid"].notna().sum() == DAY  # first snapshot is at second 0
 
 
 def test_vol_spread_carries_the_last_price_through_a_quiet_second(make_data):
     """A book with no update has not changed; it is not missing."""
-    root = make_data(n=24)                      # one snapshot an hour
+    root = make_data(n=24)  # one snapshot an hour
     df = vol_spread(root, MARKET, DATE)
     assert df["mid"].notna().sum() == DAY
     assert df["mid"].iloc[0] == df["mid"].iloc[3599]
@@ -176,12 +180,13 @@ def test_realized_volatility_of_a_flat_series_is_zero():
 
 
 def test_realized_volatility_matches_the_closed_form():
-    prices = [100.0 * (1.001 ** i) for i in range(101)]
+    prices = [100.0 * (1.001**i) for i in range(101)]
     expected = math.sqrt(100 * math.log(1.001) ** 2) * 1e4
     assert realized_vol_bps(prices) == pytest.approx(expected)
 
 
 # ---- running and storing ---------------------------------------------------
+
 
 def test_run_writes_then_skips(make_data):
     root = make_data()
@@ -208,6 +213,7 @@ def test_reading_something_underived_says_how_to_derive_it(root):
 
 # ---- agreement with the warehouse ------------------------------------------
 
+
 @pytest.mark.skipif(not WAREHOUSE.is_dir(), reason="the seller's warehouse is not mounted")
 @pytest.mark.parametrize("market,size", [("COINCHECK:BTC_SPOT", 0.002), ("GMO:BTC_JPY", 0.002)])
 def test_market_price_agrees_with_the_warehouse(market, size):
@@ -230,8 +236,16 @@ def test_market_price_agrees_with_the_warehouse(market, size):
     import pyarrow.parquet as pq
 
     exchange, symbol = market.split(":")
-    reference = (WAREHOUSE / "silver" / "dataset=MarketPrice" / f"exchange={exchange}"
-                 / f"symbol={symbol}" / f"execution_size={size:g}" / f"date={DATE}" / "data.parquet")
+    reference = (
+        WAREHOUSE
+        / "silver"
+        / "dataset=MarketPrice"
+        / f"exchange={exchange}"
+        / f"symbol={symbol}"
+        / f"execution_size={size:g}"
+        / f"date={DATE}"
+        / "data.parquet"
+    )
     if not reference.is_file():
         pytest.skip(f"no warehouse MarketPrice for {market}")
 
@@ -253,6 +267,7 @@ def test_market_price_agrees_with_the_warehouse(market, size):
 
 
 # ---- what an analysis is handed ---------------------------------------------
+
 
 def test_usable_drops_the_rows_an_analysis_must_not_measure(make_data):
     """A thin book and an artefact are both excluded, and by Hase not the caller."""

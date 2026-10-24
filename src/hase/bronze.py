@@ -96,8 +96,9 @@ def dates(market: Market, data_type: DataType, root: str | Path | None = None) -
     return komachi.bronze.dates(market.id, DataType(data_type), _root(root))
 
 
-def load_day(market: Market, data_type: DataType, day: Day,
-             root: str | Path | None = None) -> list[Trade] | list[OrderBook]:
+def load_day(
+    market: Market, data_type: DataType, day: Day, root: str | Path | None = None
+) -> list[Trade] | list[OrderBook]:
     """One market-day, in file order -- which for bronze is timestamp order.
 
     Raises `MissingDataError` if the day is not complete on disk.
@@ -109,8 +110,9 @@ def load_day(market: Market, data_type: DataType, day: Day,
     return to_order_books(store.load_order_book(root, market.id, day, depth=None), market)
 
 
-def load(market: Market, data_type: DataType, start: Day, end: Day,
-         root: str | Path | None = None) -> list[Trade] | list[OrderBook]:
+def load(
+    market: Market, data_type: DataType, start: Day, end: Day, root: str | Path | None = None
+) -> list[Trade] | list[OrderBook]:
     """Every day from `start` to `end` inclusive, concatenated in order.
 
     Strict: a missing day raises `MissingDataError` rather than leaving a hole
@@ -134,8 +136,7 @@ def to_trades(df, market: Market) -> list[Trade]:
         return []
     symbol, exchange_name = market.symbol, market.exchange_name
     return [
-        Trade("", Side.BUY if row.side == 0 else Side.SELL, row.price, row.size,
-              symbol, exchange_name, row.ts)
+        Trade("", Side.BUY if row.side == 0 else Side.SELL, row.price, row.size, symbol, exchange_name, row.ts)
         for row in df.itertuples(index=False)
     ]
 
@@ -178,10 +179,7 @@ def to_order_books(df, market: Market) -> list[OrderBook]:
     symbol, exchange_name = market.symbol, market.exchange_name
     bids = _side_levels(df, "bid", depth)
     asks = _side_levels(df, "ask", depth)
-    return [
-        RecordedOrderBook(b, a, symbol, exchange_name, ts)
-        for b, a, ts in zip(bids, asks, df["ts"].tolist())
-    ]
+    return [RecordedOrderBook(b, a, symbol, exchange_name, ts) for b, a, ts in zip(bids, asks, df["ts"].tolist())]
 
 
 def _side_levels(df, side: str, depth: int) -> list[list[OrderLevel]]:
@@ -208,4 +206,3 @@ def _side_levels(df, side: str, depth: int) -> list[list[OrderLevel]]:
         list(map(OrderLevel, p, q)) if k == depth else list(map(OrderLevel, p[:k], q[:k]))
         for p, q, k in zip(prices, qtys, kept)
     ]
-

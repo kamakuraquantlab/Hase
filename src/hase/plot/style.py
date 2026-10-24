@@ -30,7 +30,10 @@ def prepare(figsize=(13, 7), rows=1, height_ratios=None):
     import matplotlib.pyplot as plt
 
     fig, axes = plt.subplots(
-        rows, 1, figsize=figsize, sharex=True,
+        rows,
+        1,
+        figsize=figsize,
+        sharex=True,
         gridspec_kw={"height_ratios": height_ratios or [1] * rows},
     )
     return fig, (axes if rows > 1 else [axes])

@@ -4,12 +4,11 @@ import argparse
 from pathlib import Path
 
 import pytest
+from conftest import DATE, MARKET
 
 from hase.layout import available_dates
 from hase.plot import plot_order_book, plot_trades
 from hase.store import MissingDataError, book_depth, load_order_book, load_trades
-
-from conftest import DATE, MARKET
 
 
 def test_the_root_is_asked_of_komachi_not_worked_out_again(tmp_path, monkeypatch):
@@ -34,7 +33,7 @@ def test_the_root_is_asked_of_komachi_not_worked_out_again(tmp_path, monkeypatch
 def test_hase_reads_the_root_and_nothing_else_from_that_file():
     """The file holds Komachi's token. Hase has no use for one and must not
     grow a reason to read it."""
-    import hase.layout as layout
+    from hase import layout
 
     source = Path(layout.__file__).read_text()
     assert "TOKEN" not in source, "layout.py should have no notion of a token"
@@ -61,7 +60,6 @@ def test_order_book_reads_only_the_levels_asked_for(root, make_data):
     assert set(df.columns) == {"ts", "bid0_price", "bid0_qty", "ask0_price", "ask0_qty", "time"}
 
 
-
 def test_order_book_without_a_depth_reads_every_level(root, make_data):
     """A backtest replays the whole book, however deep this venue's file is."""
     make_data()
@@ -72,6 +70,7 @@ def test_order_book_without_a_depth_reads_every_level(root, make_data):
 def test_book_depth_reads_the_columns():
     assert book_depth(["ts", "bid0_price", "ask0_price", "bid1_price", "ask1_price"]) == 2
     assert book_depth(["ts", "side", "price", "size"]) == 0
+
 
 def test_available_dates_lists_what_is_downloaded(root, make_data):
     make_data(file_date="2025-07-01")

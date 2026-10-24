@@ -70,10 +70,15 @@ def _walk_notional(price, qty, target):
     return np.where(enough, spent / np.where(base > 0, base, np.nan), np.nan), spent
 
 
-def derive(root, market: str, file_date: str, *,
-           execution_size: float | None = None,
-           execution_notional: float | None = None,
-           degenerate_spread_bps: float = DEGENERATE_SPREAD_BPS):
+def derive(
+    root,
+    market: str,
+    file_date: str,
+    *,
+    execution_size: float | None = None,
+    execution_notional: float | None = None,
+    degenerate_spread_bps: float = DEGENERATE_SPREAD_BPS,
+):
     """Effective bid and ask for one trade size, per snapshot."""
     import pandas as pd
 
@@ -96,26 +101,28 @@ def derive(root, market: str, file_date: str, *,
 
     walk = _walk_size if execution_size is not None else _walk_notional
     target = execution_size if execution_size is not None else execution_notional
-    bid, bid_filled = walk(bid_price, bid_qty, target)
-    ask, ask_filled = walk(ask_price, ask_qty, target)
+    bid, _bid_filled = walk(bid_price, bid_qty, target)
+    ask, _ask_filled = walk(ask_price, ask_qty, target)
 
     mid = (bid + ask) / 2
     with np.errstate(invalid="ignore"):
         spread_bps = (ask - bid) / mid * 1e4
 
-    return pd.DataFrame({
-        "ts": ts,
-        "bid": bid,
-        "ask": ask,
-        "mid": mid,
-        "spread": ask - bid,
-        "spread_bps": spread_bps,
-        # Whether both sides filled, kept so a caller can tell "the book was
-        # too thin" apart from "no data", which are different findings.
-        "filled": np.isfinite(bid) & np.isfinite(ask),
-        # A resync artefact rather than a market state. See the constant above.
-        "degenerate": np.isfinite(spread_bps) & (spread_bps > degenerate_spread_bps),
-    })
+    return pd.DataFrame(
+        {
+            "ts": ts,
+            "bid": bid,
+            "ask": ask,
+            "mid": mid,
+            "spread": ask - bid,
+            "spread_bps": spread_bps,
+            # Whether both sides filled, kept so a caller can tell "the book was
+            # too thin" apart from "no data", which are different findings.
+            "filled": np.isfinite(bid) & np.isfinite(ask),
+            # A resync artefact rather than a market state. See the constant above.
+            "degenerate": np.isfinite(spread_bps) & (spread_bps > degenerate_spread_bps),
+        }
+    )
 
 
 def _format_size(value: float) -> str:

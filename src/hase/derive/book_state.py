@@ -35,17 +35,19 @@ def derive(root, market: str, file_date: str):
     bid_qty, ask_qty = bid_qty[ok], ask_qty[ok]
     mid = (bid + ask) / 2
 
-    return pd.DataFrame({
-        "ts": raw["ts"].to_numpy(dtype="float64")[ok],
-        "bid": bid,
-        "ask": ask,
-        "mid": mid,
-        "spread": ask - bid,
-        "spread_bps": (ask - bid) / mid * 1e4,
-        "bid_qty": bid_qty,
-        "ask_qty": ask_qty,
-        # Quote-currency notional resting at the touch, which is the depth
-        # figure article 1 reports. The smaller side, because a round trip is
-        # limited by whichever side is thinner.
-        "top_of_book": np.minimum(bid_qty * bid, ask_qty * ask),
-    })
+    return pd.DataFrame(
+        {
+            "ts": raw["ts"].to_numpy(dtype="float64")[ok],
+            "bid": bid,
+            "ask": ask,
+            "mid": mid,
+            "spread": ask - bid,
+            "spread_bps": (ask - bid) / mid * 1e4,
+            "bid_qty": bid_qty,
+            "ask_qty": ask_qty,
+            # Quote-currency notional resting at the touch, which is the depth
+            # figure article 1 reports. The smaller side, because a round trip is
+            # limited by whichever side is thinner.
+            "top_of_book": np.minimum(bid_qty * bid, ask_qty * ask),
+        }
+    )

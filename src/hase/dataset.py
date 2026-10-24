@@ -15,8 +15,7 @@ Nothing here writes; materialising is `hase derive`'s job alone.
 import sys
 from pathlib import Path
 
-from .derive import plan
-from .derive import book_state, market_price, vol_spread
+from .derive import book_state, market_price, plan, vol_spread
 from .layout import derived_path
 
 _MODULES = {"BookState": book_state, "MarketPrice": market_price, "VolSpread": vol_spread}
@@ -25,13 +24,24 @@ _MODULES = {"BookState": book_state, "MarketPrice": market_price, "VolSpread": v
 _ANNOUNCED: set[tuple[str, str]] = set()
 
 
-def load(root: Path, dataset: str, market: str, file_date: str, *, prefer_stored: bool = True,
-         execution_size=None, execution_notional=None, step=None, lookback=None):
+def load(
+    root: Path,
+    dataset: str,
+    market: str,
+    file_date: str,
+    *,
+    prefer_stored: bool = True,
+    execution_size=None,
+    execution_notional=None,
+    step=None,
+    lookback=None,
+):
     """A derived dataset for one market-day, read if stored and derived if not."""
     import pyarrow.parquet as pq
 
-    params, kwargs = plan(dataset, execution_size=execution_size,
-                          execution_notional=execution_notional, step=step, lookback=lookback)
+    params, kwargs = plan(
+        dataset, execution_size=execution_size, execution_notional=execution_notional, step=step, lookback=lookback
+    )
     path = derived_path(root, dataset, market, file_date, params)
     if prefer_stored and path.is_file():
         own = pq.ParquetFile(path).schema_arrow.names
@@ -62,8 +72,7 @@ def _announce(dataset: str, market: str, path: Path) -> None:
     if key in _ANNOUNCED:
         return
     _ANNOUNCED.add(key)
-    print(f"note: {path.parent.parent} holds a different {dataset}; deriving instead",
-          file=sys.stderr)
+    print(f"note: {path.parent.parent} holds a different {dataset}; deriving instead", file=sys.stderr)
 
 
 def _normalise(dataset: str, frame, kwargs):

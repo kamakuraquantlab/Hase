@@ -54,7 +54,7 @@ def second_grid(timestamps, values, *, min_seconds: int | None = None):
 def _grid(second_of_day, values):
     """Last value in each second, forward filled, NaN before the first."""
     grid = np.full(DAY, np.nan)
-    grid[second_of_day] = values          # later writes win, so this is last-in-second
+    grid[second_of_day] = values  # later writes win, so this is last-in-second
     seen = np.isfinite(grid)
     if not seen.any():
         return grid
@@ -79,7 +79,7 @@ def realized_vol_bps(mid_grid, step: int = 1):
     returns = returns[np.isfinite(returns)]
     if len(returns) < 10:
         return None
-    return float(np.sqrt((returns ** 2).sum()) * 1e4)
+    return float(np.sqrt((returns**2).sum()) * 1e4)
 
 
 def _rolling_rv_bps(mid_grid, lookback: int):
@@ -91,12 +91,11 @@ def _rolling_rv_bps(mid_grid, lookback: int):
     hi = np.arange(len(mid_grid))
     lo = np.maximum(hi - lookback, 0)
     out = np.sqrt(cumulative[hi] - cumulative[lo]) * 1e4
-    out[:lookback] = np.nan          # not a full window yet, so not comparable
+    out[:lookback] = np.nan  # not a full window yet, so not comparable
     return out
 
 
-def derive(root, market: str, file_date: str, *,
-           step: int = DEFAULT_STEP, lookback: int = DEFAULT_LOOKBACK):
+def derive(root, market: str, file_date: str, *, step: int = DEFAULT_STEP, lookback: int = DEFAULT_LOOKBACK):
     """One row per `step` seconds of the Tokyo day."""
     import pandas as pd
 
@@ -115,13 +114,15 @@ def derive(root, market: str, file_date: str, *,
     # the data, so a day that starts late still lines up with every other day.
     day_start = ts[0] - ((ts[0] + JST_OFFSET) % DAY)
     index = np.arange(0, DAY, step)
-    return pd.DataFrame({
-        "ts": day_start + index,
-        "sec": index,
-        "mid": mid[::step],
-        "spread_bps": spread[::step],
-        "rv_bps": rv[::step],
-    })
+    return pd.DataFrame(
+        {
+            "ts": day_start + index,
+            "sec": index,
+            "mid": mid[::step],
+            "spread_bps": spread[::step],
+            "rv_bps": rv[::step],
+        }
+    )
 
 
 def param_id(step: int, lookback: int) -> str:

@@ -52,10 +52,17 @@ def book_row(ts: float, bids: list[tuple], asks: list[tuple], depth: int) -> dic
 
 
 def test_trades_are_read_in_file_order(root):
-    write_parquet(root, DataType.TRADE, MARKET, DATE, [
-        {"ts": 100.0, "side": 0, "price": 15_000_000.0, "size": 0.01},
-        {"ts": 100.5, "side": 1, "price": 15_000_100.0, "size": 0.02},
-    ], TRADE_COLUMNS)
+    write_parquet(
+        root,
+        DataType.TRADE,
+        MARKET,
+        DATE,
+        [
+            {"ts": 100.0, "side": 0, "price": 15_000_000.0, "size": 0.01},
+            {"ts": 100.5, "side": 1, "price": 15_000_100.0, "size": 0.02},
+        ],
+        TRADE_COLUMNS,
+    )
 
     first, second = bronze.load_day(MARKET, DataType.TRADE, DATE, root)
     assert (first.side, first.price, first.size, first.get_ts()) == (Side.BUY, 15_000_000.0, 0.01, 100.0)
@@ -65,9 +72,16 @@ def test_trades_are_read_in_file_order(root):
 
 def test_order_books_are_read_with_depth_from_the_columns(root):
     depth = 3
-    write_parquet(root, DataType.ORDER_BOOK, MARKET, DATE, [
-        book_row(100.0, [(99.0, 1.0), (98.0, 2.0), (97.0, 3.0)], [(101.0, 1.5), (102.0, 2.5), (103.0, 3.5)], depth),
-    ], book_columns(depth))
+    write_parquet(
+        root,
+        DataType.ORDER_BOOK,
+        MARKET,
+        DATE,
+        [
+            book_row(100.0, [(99.0, 1.0), (98.0, 2.0), (97.0, 3.0)], [(101.0, 1.5), (102.0, 2.5), (103.0, 3.5)], depth),
+        ],
+        book_columns(depth),
+    )
 
     [book] = bronze.load_day(MARKET, DataType.ORDER_BOOK, DATE, root)
     assert [level.price for level in book.bids] == [99.0, 98.0, 97.0]
@@ -79,8 +93,14 @@ def test_order_books_are_read_with_depth_from_the_columns(root):
 def test_a_short_book_stops_at_the_absent_level(root):
     """A venue that showed two levels must not read back as twenty."""
     depth = 20
-    write_parquet(root, DataType.ORDER_BOOK, MARKET, DATE,
-                  [book_row(100.0, [(99.0, 1.0), (98.0, 2.0)], [(101.0, 1.5)], depth)], book_columns(depth))
+    write_parquet(
+        root,
+        DataType.ORDER_BOOK,
+        MARKET,
+        DATE,
+        [book_row(100.0, [(99.0, 1.0), (98.0, 2.0)], [(101.0, 1.5)], depth)],
+        book_columns(depth),
+    )
 
     [book] = bronze.load_day(MARKET, DataType.ORDER_BOOK, DATE, root)
     assert (len(book.bids), len(book.asks)) == (2, 1)
@@ -93,15 +113,25 @@ def test_rows_of_different_depths_each_stop_at_their_own_absent_level(root):
     column that is null in every row reads back as None: both are absent.
     """
     depth = 4
-    write_parquet(root, DataType.ORDER_BOOK, MARKET, DATE, [
-        book_row(100.0, [(99.0, 1.0), (98.0, 2.0), (97.0, 3.0)], [(101.0, 1.0)], depth),
-        book_row(101.0, [(99.5, 1.0)], [(101.5, 1.0), (102.5, 2.0)], depth),
-        book_row(102.0, [], [(103.0, 1.0), (104.0, 2.0), (105.0, 3.0)], depth),
-    ], book_columns(depth))
+    write_parquet(
+        root,
+        DataType.ORDER_BOOK,
+        MARKET,
+        DATE,
+        [
+            book_row(100.0, [(99.0, 1.0), (98.0, 2.0), (97.0, 3.0)], [(101.0, 1.0)], depth),
+            book_row(101.0, [(99.5, 1.0)], [(101.5, 1.0), (102.5, 2.0)], depth),
+            book_row(102.0, [], [(103.0, 1.0), (104.0, 2.0), (105.0, 3.0)], depth),
+        ],
+        book_columns(depth),
+    )
 
     books = bronze.load_day(MARKET, DataType.ORDER_BOOK, DATE, root)
     assert [[(lv.price, lv.amount) for lv in b.bids] for b in books] == [
-        [(99.0, 1.0), (98.0, 2.0), (97.0, 3.0)], [(99.5, 1.0)], []]
+        [(99.0, 1.0), (98.0, 2.0), (97.0, 3.0)],
+        [(99.5, 1.0)],
+        [],
+    ]
     assert [[lv.price for lv in b.asks] for b in books] == [[101.0], [101.5, 102.5], [103.0, 104.0, 105.0]]
     assert all(type(lv.price) is float for b in books for lv in b.bids + b.asks)
 
@@ -111,9 +141,16 @@ def test_a_recorded_book_computes_each_market_price_once(root):
     from qate.core.model import OrderBook
 
     depth = 3
-    write_parquet(root, DataType.ORDER_BOOK, MARKET, DATE, [
-        book_row(100.0, [(99.0, 1.0), (98.0, 2.0), (97.0, 3.0)], [(101.0, 1.5), (102.0, 2.5), (103.0, 3.5)], depth),
-    ], book_columns(depth))
+    write_parquet(
+        root,
+        DataType.ORDER_BOOK,
+        MARKET,
+        DATE,
+        [
+            book_row(100.0, [(99.0, 1.0), (98.0, 2.0), (97.0, 3.0)], [(101.0, 1.5), (102.0, 2.5), (103.0, 3.5)], depth),
+        ],
+        book_columns(depth),
+    )
     [book] = bronze.load_day(MARKET, DataType.ORDER_BOOK, DATE, root)
 
     assert isinstance(book, OrderBook)
@@ -121,7 +158,7 @@ def test_a_recorded_book_computes_each_market_price_once(root):
     assert book.market_price(2.0) is first
     assert first == OrderBook.market_price(book, 2.0)
     assert book.market_price(1.0) == OrderBook.market_price(book, 1.0)
-    assert book.market_price(100.0) is None   # more than the book holds, and remembered as such
+    assert book.market_price(100.0) is None  # more than the book holds, and remembered as such
     assert book.market_price(100.0) is None
 
 

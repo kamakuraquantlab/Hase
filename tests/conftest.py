@@ -33,12 +33,17 @@ def make_data(root):
 
         trade = data_path(root, market, "Trade", file_date)
         trade.parent.mkdir(parents=True, exist_ok=True)
-        pq.write_table(pa.Table.from_pydict({
-            "ts": ts,
-            "side": [i % 2 for i in range(n)],
-            "price": [15_000_000.0 + i for i in range(n)],
-            "size": [0.1] * n,
-        }), trade)
+        pq.write_table(
+            pa.Table.from_pydict(
+                {
+                    "ts": ts,
+                    "side": [i % 2 for i in range(n)],
+                    "price": [15_000_000.0 + i for i in range(n)],
+                    "size": [0.1] * n,
+                }
+            ),
+            trade,
+        )
 
         book = data_path(root, market, "OrderBook", file_date)
         book.parent.mkdir(parents=True, exist_ok=True)

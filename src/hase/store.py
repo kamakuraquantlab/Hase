@@ -61,8 +61,9 @@ def book_depth(columns) -> int:
     return depth
 
 
-def write_derived(root: Path, dataset: str, market: str, file_date: str, frame,
-                  params: dict[str, str] | None = None) -> Path:
+def write_derived(
+    root: Path, dataset: str, market: str, file_date: str, frame, params: dict[str, str] | None = None
+) -> Path:
     """Write one day of a derived dataset, atomically.
 
     Via a temporary file in the same directory and then a rename, because a
@@ -81,8 +82,9 @@ def write_derived(root: Path, dataset: str, market: str, file_date: str, frame,
     return path
 
 
-def read_derived(root: Path, dataset: str, market: str, file_date: str,
-                 params: dict[str, str] | None = None, columns=None):
+def read_derived(
+    root: Path, dataset: str, market: str, file_date: str, params: dict[str, str] | None = None, columns=None
+):
     """Read one day of a derived dataset, or say how to make it.
 
     Whether the frame comes back wider than it was written depends on the

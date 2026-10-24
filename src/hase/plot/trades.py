@@ -8,8 +8,7 @@ from . import style
 SIDE_BUY = 0
 
 
-def plot_trades(root: Path, market: str, file_date: str, output: str,
-                volume_bucket: str = "5min") -> Path:
+def plot_trades(root: Path, market: str, file_date: str, output: str, volume_bucket: str = "5min") -> Path:
     """Price over the day, with buy and sell volume beneath it.
 
     Volume is bucketed rather than drawn per trade: a day is tens of thousands

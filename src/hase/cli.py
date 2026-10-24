@@ -15,7 +15,8 @@ import komachi.bronze
 from komachi import data_root
 from komachi.settings import DEFAULT_ROOT, ENV_FILE
 
-from hase.derive import DERIVATIONS, run as run_derivation
+from hase.derive import DERIVATIONS
+from hase.derive import run as run_derivation
 from hase.layout import (
     DERIVED,
     InvalidMarketError,
@@ -71,7 +72,10 @@ def cmd_derive(args) -> int:
     for file_date in wanted:
         try:
             path, was_made = run_derivation(
-                root, args.dataset, args.market, file_date,
+                root,
+                args.dataset,
+                args.market,
+                file_date,
                 recreate=args.recreate,
                 execution_size=getattr(args, "execution_size", None),
                 execution_notional=getattr(args, "execution_notional", None),
@@ -89,8 +93,9 @@ def cmd_derive(args) -> int:
             print(f"  {file_date}  {path.stat().st_size / 1e6:.1f} MB")
         else:
             skipped += 1
-    print(f"\n{args.dataset} for {args.market}: {made} derived, {skipped} already present, "
-          f"{missing} without source data")
+    print(
+        f"\n{args.dataset} for {args.market}: {made} derived, {skipped} already present, {missing} without source data"
+    )
     return 1 if made == 0 and skipped == 0 else 0
 
 
@@ -128,8 +133,7 @@ def cmd_local(args) -> int:
     root = _root(args)
     print(f"{args.market}   {root}\n")
     for data_type, held in komachi.bronze.market_state(args.market, root).items():
-        state = (f"{held.days:>4} day(s)  {_periods(held.dates)}" if held.days
-                 else "   nothing downloaded")
+        state = f"{held.days:>4} day(s)  {_periods(held.dates)}" if held.days else "   nothing downloaded"
         print(f"bronze  {data_type:12} {state}")
     for dataset in sorted(DERIVED):
         layer = DERIVED[dataset][0]
@@ -167,7 +171,10 @@ def cmd_trades(args) -> int:
 
 def cmd_book(args) -> int:
     out = plot_order_book(
-        _root(args), args.market, args.date, args.output,
+        _root(args),
+        args.market,
+        args.date,
+        args.output,
         resample=None if args.no_resample else args.resample,
     )
     print(f"Wrote {out}")
@@ -195,7 +202,8 @@ data root
 dates
   A date is an Asia/Tokyo day, matching how the data is partitioned.
   Timestamps inside the files are UTC epochs; plots are labelled in JST.
-""")
+""",
+    )
     # Hidden, like Komachi's. It still works and is what makes a second root
     # possible; the settings file is where a buyer changes it, and listing a
     # developer switch at the top of every --help made it the first thing read.
@@ -209,13 +217,10 @@ dates
     p.add_argument("--days", type=int, help="How many days from --start. Default 1")
     p.add_argument("--end", help="Last JST day, inclusive. Use instead of --days")
     p.add_argument("--recreate", action="store_true", help="Rebuild days that already exist")
-    p.add_argument("--execution-size", type=float,
-                   help="MarketPrice: trade size in base currency, e.g. 0.002")
-    p.add_argument("--execution-notional", type=float,
-                   help="MarketPrice: trade size in quote currency, e.g. 1000000")
+    p.add_argument("--execution-size", type=float, help="MarketPrice: trade size in base currency, e.g. 0.002")
+    p.add_argument("--execution-notional", type=float, help="MarketPrice: trade size in quote currency, e.g. 1000000")
     p.add_argument("--step", type=int, help="VolSpread: grid interval in seconds. Default 1")
-    p.add_argument("--lookback", type=int,
-                   help="VolSpread: realized volatility window in seconds. Default 300")
+    p.add_argument("--lookback", type=int, help="VolSpread: realized volatility window in seconds. Default 300")
     p.set_defaults(func=cmd_derive)
 
     p = sub.add_parser("local", help="What is downloaded, and what has been derived")
