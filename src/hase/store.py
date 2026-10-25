@@ -82,6 +82,13 @@ def write_derived(
     return path
 
 
+def derived_attrs(path: Path) -> dict:
+    """What a derivation recorded about a day, read from the footer alone."""
+    import pyarrow.parquet as pq
+
+    return (pq.read_schema(path).pandas_metadata or {}).get("attributes", {})
+
+
 def read_derived(
     root: Path, dataset: str, market: str, file_date: str, params: dict[str, str] | None = None, columns=None
 ):

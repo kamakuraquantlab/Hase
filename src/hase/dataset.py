@@ -46,7 +46,7 @@ def load(
     if prefer_stored and path.is_file():
         own = pq.ParquetFile(path).schema_arrow.names
         if _usable(dataset, own):
-            return _normalise(dataset, pq.read_table(path, columns=own).to_pandas(), kwargs)
+            return pq.read_table(path, columns=own).to_pandas()
         _announce(dataset, market, path)
     return _MODULES[dataset].derive(root, market, file_date, **kwargs)
 
@@ -75,42 +75,10 @@ def _announce(dataset: str, market: str, path: Path) -> None:
     print(f"note: {path.parent.parent} holds a different {dataset}; deriving instead", file=sys.stderr)
 
 
-def _normalise(dataset: str, frame, kwargs):
-    """Give a stored frame the columns a derived one would have.
-
-    A MarketPrice written by an older tool may predate `filled` and
-    `degenerate` and drop the rows they would have described. Rebuilding them
-    from what is there means a script sees one shape whichever source it read,
-    instead of branching on where the data came from.
-    """
-    import numpy as np
-
-    if dataset != "MarketPrice":
-        return frame
-    if "filled" not in frame:
-        frame["filled"] = np.isfinite(frame["bid"].to_numpy()) & np.isfinite(frame["ask"].to_numpy())
-    if "degenerate" not in frame:
-        limit = kwargs.get("degenerate_spread_bps", market_price.DEGENERATE_SPREAD_BPS)
-        spread = frame["spread_bps"].to_numpy()
-        frame["degenerate"] = np.isfinite(spread) & (spread > limit)
-    return frame
-
-
 def stored(root: Path, dataset: str, market: str, file_date: str, **params) -> bool:
     """Whether the day is already on disk, without reading it."""
     partition, _ = plan(dataset, **params)
     return derived_path(root, dataset, market, file_date, partition).is_file()
-
-
-def usable(frame):
-    """The rows of a MarketPrice an analysis should measure.
-
-    Filled, and not a collector artefact. Both conditions are Hase's business
-    rather than the caller's: an article asking what a trade costs should not
-    have to know that a book can be too thin to fill, nor what a degenerate
-    snapshot is.
-    """
-    return frame[frame["filled"] & ~frame["degenerate"]]
 
 
 def trade_count(root: Path, market: str, file_date: str) -> int | None:

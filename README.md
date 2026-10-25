@@ -39,12 +39,13 @@ Deriving costs about a quarter of a second per market-day, so a market-year is
 a minute and a half. `MarketPrice` is around an eighth the size of the bronze
 it reads.
 
-**Nothing is dropped silently.** A size the visible book cannot fill is `NaN`
-with `filled` false, rather than a partial fill priced as a whole one. A
-snapshot whose walked spread exceeds 100 bps is flagged `degenerate` rather
-than removed: those are collector artefacts from a resync, they are present in
-historical bronze, and how many of them a day holds is a fact about the archive
-worth being able to count.
+**Nothing is dropped silently.** `MarketPrice` holds only snapshots with a
+real price. A size the visible book cannot fill is left out rather than priced
+as a partial fill, and so is a snapshot whose walked spread exceeds 100 bps:
+those are collector artefacts from a resync, present in historical bronze. How
+many of each a day held is written into the file (`df.attrs["dropped"]` after
+`pd.read_parquet`) and printed by `hase derive`, because it is a fact about the
+archive worth being able to count.
 
 ## Agreement with the pipeline that produced the data
 

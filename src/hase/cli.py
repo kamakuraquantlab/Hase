@@ -23,7 +23,7 @@ from hase.layout import (
     available_derived_dates,
 )
 from hase.plot import plot_order_book, plot_trades
-from hase.store import MissingDataError
+from hase.store import MissingDataError, derived_attrs
 
 
 def _root(args) -> Path:
@@ -90,13 +90,21 @@ def cmd_derive(args) -> int:
             continue
         if was_made:
             made += 1
-            print(f"  {file_date}  {path.stat().st_size / 1e6:.1f} MB")
+            print(f"  {file_date}  {path.stat().st_size / 1e6:.1f} MB{_dropped_note(path)}")
         else:
             skipped += 1
     print(
         f"\n{args.dataset} for {args.market}: {made} derived, {skipped} already present, {missing} without source data"
     )
     return 1 if made == 0 and skipped == 0 else 0
+
+
+def _dropped_note(path: Path) -> str:
+    """The snapshots a MarketPrice day left out, beside the line that wrote it."""
+    dropped = derived_attrs(path).get("dropped")
+    if not dropped:
+        return ""
+    return f"  dropped {dropped['unfilled']} unfilled, {dropped['degenerate']} degenerate of {dropped['snapshots']}"
 
 
 def _periods(dates: list[str]) -> str:

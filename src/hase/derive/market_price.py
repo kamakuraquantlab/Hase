@@ -13,9 +13,12 @@ JPY notional buys a different quantity every day as the price moves, so
 cross-venue comparison has to use the base-currency one because a USDT-quoted
 book cannot be walked to a JPY target without an FX series.
 
-A size the visible book cannot fill yields NaN rather than a partial price. A
-partial fill priced as if complete is the kind of number that looks reasonable
-and is wrong.
+Only snapshots that give a real price are kept. A size the visible book cannot
+fill has no price -- a partial fill priced as if complete is the kind of number
+that looks reasonable and is wrong -- and a degenerate snapshot (see below) has
+a price that is an artefact. Both are dropped, and how many of each a day held
+is written into the file's metadata and printed by `hase derive`, so the rows
+are gone but the count is not.
 """
 
 import numpy as np
@@ -23,8 +26,12 @@ import numpy as np
 from ..store import load_order_book
 
 LEVELS = 20
-FILL_TOLERANCE = 0.999
-COLUMNS = ["ts", "bid", "ask", "mid", "spread", "spread_bps", "filled", "degenerate"]
+COLUMNS = ["ts", "bid", "ask", "mid", "spread", "spread_bps"]
+
+# A walk counts as filled when what is left to take is below rounding error,
+# relative to the target so a notional in yen and a size in BTC are held to the
+# same standard. Anything looser prices a partial fill as a whole one.
+FILL_RTOL = 1e-9
 
 # A guard against collector artefacts, and the reason matters because the
 # artefacts are in the bronze this reads.
@@ -40,9 +47,10 @@ COLUMNS = ["ts", "bid", "ask", "mid", "spread", "spread_bps", "filled", "degener
 # healthy and only the walk reveals it. 100 bps is four to ten times any real
 # walked stress spread on these venues and far below the artefact spreads.
 #
-# Hase marks these rather than dropping them. How many snapshots a day were
-# artefacts is a fact about the archive a buyer is entitled to see, and
-# dropping rows silently is how a gap becomes invisible.
+# These are dropped, not kept with a flag: every reader would otherwise have to
+# know to filter them, and the one that forgets measures the artefact. How many
+# a day held is still a fact about the archive a buyer is entitled to see, so
+# the count travels with the file -- see `dropped`.
 DEGENERATE_SPREAD_BPS = 100.0
 
 
@@ -51,8 +59,8 @@ def _walk_size(price, qty, target):
     taken = np.clip(target - (np.cumsum(qty, axis=1) - qty), 0.0, qty)
     filled = taken.sum(axis=1)
     cost = (taken * price).sum(axis=1)
-    enough = filled >= target * FILL_TOLERANCE
-    return np.where(enough, cost / np.where(filled > 0, filled, np.nan), np.nan), filled
+    enough = filled >= target * (1 - FILL_RTOL)
+    return np.where(enough, cost / target, np.nan), filled
 
 
 def _walk_notional(price, qty, target):
@@ -66,7 +74,7 @@ def _walk_notional(price, qty, target):
     # though nothing was taken from that level, and the book reads as unable to
     # fill an amount its first level covers.
     base = np.divide(taken, price, out=np.zeros_like(taken), where=price > 0).sum(axis=1)
-    enough = spent >= target * FILL_TOLERANCE
+    enough = spent >= target * (1 - FILL_RTOL)
     return np.where(enough, spent / np.where(base > 0, base, np.nan), np.nan), spent
 
 
@@ -108,21 +116,32 @@ def derive(
     with np.errstate(invalid="ignore"):
         spread_bps = (ask - bid) / mid * 1e4
 
-    return pd.DataFrame(
+    filled = np.isfinite(bid) & np.isfinite(ask)
+    degenerate = filled & (spread_bps > degenerate_spread_bps)
+    keep = filled & ~degenerate
+    frame = pd.DataFrame(
         {
-            "ts": ts,
-            "bid": bid,
-            "ask": ask,
-            "mid": mid,
-            "spread": ask - bid,
-            "spread_bps": spread_bps,
-            # Whether both sides filled, kept so a caller can tell "the book was
-            # too thin" apart from "no data", which are different findings.
-            "filled": np.isfinite(bid) & np.isfinite(ask),
-            # A resync artefact rather than a market state. See the constant above.
-            "degenerate": np.isfinite(spread_bps) & (spread_bps > degenerate_spread_bps),
+            "ts": ts[keep],
+            "bid": bid[keep],
+            "ask": ask[keep],
+            "mid": mid[keep],
+            "spread": (ask - bid)[keep],
+            "spread_bps": spread_bps[keep],
         }
     )
+    # Kept apart so "the book was too thin" and "the snapshot was an artefact"
+    # stay different findings, which they are.
+    frame.attrs["dropped"] = {
+        "snapshots": len(ts),
+        "unfilled": int((~filled).sum()),
+        "degenerate": int(degenerate.sum()),
+    }
+    return frame
+
+
+def dropped(frame) -> dict[str, int]:
+    """How many snapshots a derived MarketPrice left out, and why. Empty if unknown."""
+    return dict(frame.attrs.get("dropped", {}))
 
 
 def _format_size(value: float) -> str:

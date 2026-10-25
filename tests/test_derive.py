@@ -15,15 +15,15 @@ from pathlib import Path
 
 import pytest
 
-from hase.dataset import trade_count, usable
+from hase.dataset import trade_count
 from hase.derive import plan, run
 from hase.derive.book_state import derive as book_state
-from hase.derive.market_price import DEGENERATE_SPREAD_BPS
+from hase.derive.market_price import DEGENERATE_SPREAD_BPS, dropped
 from hase.derive.market_price import derive as market_price
 from hase.derive.vol_spread import DAY, realized_vol_bps
 from hase.derive.vol_spread import derive as vol_spread
 from hase.layout import derived_path
-from hase.store import MissingDataError, read_derived
+from hase.store import MissingDataError, derived_attrs, read_derived
 
 MARKET = "COINCHECK:BTC_SPOT"
 DATE = "2025-07-01"
@@ -97,17 +97,47 @@ def test_market_price_will_not_price_a_size_the_book_cannot_fill(make_data):
     """A partial fill priced as a whole one is a plausible, wrong number."""
     root = make_data()
     df = market_price(root, MARKET, DATE, execution_size=1_000.0)
-    assert not df["filled"].any()
-    assert df["bid"].isna().all()
+    assert df.empty
+    assert dropped(df) == {"snapshots": 240, "unfilled": 240, "degenerate": 0}
 
 
-def test_market_price_marks_degenerate_snapshots_without_dropping_them(make_data):
+def test_market_price_needs_the_whole_size_not_most_of_it(root, make_data):
+    """A book one part in a thousand short of the size is still short."""
+    import pyarrow.parquet as pq
+
+    from hase.layout import data_path
+
+    make_data()
+    book = pq.read_table(data_path(root, MARKET, "OrderBook", DATE)).to_pandas()
+    depth = min(
+        book[[f"bid{i}_qty" for i in range(20)]].sum(axis=1).min(),
+        book[[f"ask{i}_qty" for i in range(20)]].sum(axis=1).min(),
+    )
+    assert len(market_price(root, MARKET, DATE, execution_size=depth)) == 240
+    assert market_price(root, MARKET, DATE, execution_size=depth * 1.0005).empty
+
+
+def test_market_price_drops_degenerate_snapshots_and_counts_them(make_data):
     """How many snapshots were collector artefacts is a fact about the archive."""
     root = make_data()
     df = market_price(root, MARKET, DATE, execution_size=0.5, degenerate_spread_bps=0.5)
-    assert df["degenerate"].all()
-    assert len(df) == 240, "marked, not dropped"
+    assert df.empty
+    assert dropped(df) == {"snapshots": 240, "unfilled": 0, "degenerate": 240}
     assert DEGENERATE_SPREAD_BPS == 100.0
+    assert list(market_price(root, MARKET, DATE, execution_size=0.5).columns) == [
+        "ts",
+        "bid",
+        "ask",
+        "mid",
+        "spread",
+        "spread_bps",
+    ]
+
+
+def test_the_count_of_dropped_snapshots_is_written_with_the_day(make_data):
+    root = make_data()
+    path, _ = run(root, "MarketPrice", MARKET, DATE, execution_size=1_000.0)
+    assert derived_attrs(path)["dropped"]["unfilled"] == 240
 
 
 def test_a_notional_fills_from_a_book_that_is_padded_with_empty_levels(root, make_data):
@@ -138,7 +168,7 @@ def test_a_notional_fills_from_a_book_that_is_padded_with_empty_levels(root, mak
     # One level holds 1.0 at about 15,000,000, so 1,000,000 yen is a fraction
     # of the first level and must fill from it alone.
     df = market_price(root, MARKET, DATE, execution_notional=1_000_000)
-    assert df["filled"].all(), "a padded book refused an amount its first level covers"
+    assert len(df) == 240, "a padded book refused an amount its first level covers"
     assert (df["spread_bps"] > 0).all()
 
 
@@ -267,20 +297,6 @@ def test_market_price_agrees_with_the_warehouse(market, size):
 
 
 # ---- what an analysis is handed ---------------------------------------------
-
-
-def test_usable_drops_the_rows_an_analysis_must_not_measure(make_data):
-    """A thin book and an artefact are both excluded, and by Hase not the caller."""
-    root = make_data()
-    df = market_price(root, MARKET, DATE, execution_size=0.5, degenerate_spread_bps=0.0)
-    assert len(df) == 240
-    assert usable(df).empty, "every row is degenerate at a 0 bps limit"
-
-    df = market_price(root, MARKET, DATE, execution_size=1_000.0)
-    assert usable(df).empty, "the book cannot fill this size"
-
-    df = market_price(root, MARKET, DATE, execution_size=0.5)
-    assert len(usable(df)) == 240
 
 
 def test_trade_count_reads_the_footer_and_admits_a_missing_day(root, make_data):
