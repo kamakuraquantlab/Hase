@@ -34,13 +34,21 @@ def load(
     execution_size=None,
     execution_notional=None,
     step=None,
+    horizon=None,
     lookback=None,
+    smooth=None,
 ):
     """A derived dataset for one market-day, read if stored and derived if not."""
     import pyarrow.parquet as pq
 
     params, kwargs = plan(
-        dataset, execution_size=execution_size, execution_notional=execution_notional, step=step, lookback=lookback
+        dataset,
+        execution_size=execution_size,
+        execution_notional=execution_notional,
+        step=step,
+        horizon=horizon,
+        lookback=lookback,
+        smooth=smooth,
     )
     path = derived_path(root, dataset, market, file_date, params)
     if prefer_stored and path.is_file():

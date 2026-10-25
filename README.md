@@ -12,6 +12,8 @@ pip install kamakuraquantlab-hase
 hase local       --market COINCHECK:BTC_SPOT
 hase derive MarketPrice --market COINCHECK:BTC_SPOT --start 2025-07-01 --end 2025-07-28
 hase derive VolSpread   --market COINCHECK:BTC_SPOT --start 2025-07-01 --end 2025-07-28
+hase derive VolSpread   --market GMO:BTC_JPY --execution-size 0.002 --start 2026-06-01 --end 2026-06-30 \
+                        --params 60:300:120 --params 60:900:300
 hase plot-trades --market COINCHECK:BTC_SPOT --date 2025-07-01 --output trades.png
 hase plot-book   --market COINCHECK:BTC_SPOT --date 2025-07-01 --output book.png
 ```
@@ -25,7 +27,7 @@ written on, beside it under the same root, in the layout the warehouse uses.
 |---|---|---|
 | `BookState` | silver | Best bid and ask per snapshot, with mid, spread and the depth resting at the touch |
 | `MarketPrice` | silver | What a given trade size would actually pay, by walking the book |
-| `VolSpread` | gold | Mid and spread on a one-second grid, and realized volatility measured on it |
+| `VolSpread` | gold | Bid, ask, mid and spread on a regular grid, and the volatility measured on it |
 
 **Size is in base currency.** `--execution-size 0.002` is 0.002 BTC, and it is
 the default because it means the same trade on every venue and on every day.
@@ -47,6 +49,41 @@ many of each a day held is written into the file (`df.attrs["dropped"]` after
 `pd.read_parquet`) and printed by `hase derive`, because it is a fact about the
 archive worth being able to count.
 
+## Spread and volatility: one calculation, any parameters
+
+Every spread and volatility figure Hase makes comes from one function,
+`hase.derive.vol_spread.measure`, and `VolSpread` is that function stored on a
+grid. Code that needs the figures on a grid of its own -- a labeller
+resampling ticks, say -- calls `measure` rather than writing the formula again.
+
+`VolSpread` is measured either at the top of the book (the default) or on what
+a size would actually pay (`--execution-size`, read from `MarketPrice`). Its
+windows are parameters, and each set is its own partition, so any number sit
+side by side:
+
+```
+gold/dataset=VolSpread/exchange=GMO/symbol=BTC_JPY/execution_size=0.002/param_id=vs_60_300_120_1s/date=2026-06-01/data.parquet
+gold/dataset=VolSpread/exchange=GMO/symbol=BTC_JPY/execution_size=touch/param_id=vs_60_300_120_1s/date=2026-06-01/data.parquet
+```
+
+`vs_<horizon>_<lookback>_<smooth>_<step>s`: `--horizon` is the return the
+volatility is measured on, `--lookback` the window it is measured over (and the
+spread's EMA span), `--smooth` the EMA span of the volatility, and `--step` the
+grid, all in seconds. `--params H:L:S`, repeated, derives several sets from one
+read of each day.
+
+| Column | What it is |
+|---|---|
+| `bid`, `ask`, `mid`, `spread`, `spread_pct`, `spread_bps` | The last quote in each step, carried through a step with no update |
+| `rv_bps` | Realized volatility over `lookback`: root of the summed squared one-step log returns, in bps |
+| `volatility_raw` | Standard deviation of `horizon` returns over `lookback`, as a fraction |
+| `volatility_ema`, `spread_pct_ema` | Those smoothed over `smooth` and `lookback` |
+| `vol_spread_ratio` | `volatility_ema / spread_pct_ema`: how far price moves for what a round trip costs |
+
+Each day is read with the eight hours before it, so the windows at 00:00 JST
+are full when the previous day is on disk; without it, they are NaN until a
+window has passed.
+
 ## Agreement with the pipeline that produced the data
 
 Hase reimplements these derivations rather than importing them from the
@@ -56,7 +93,9 @@ trading code. That is only safe if the two agree, so the test suite checks
 mounted, and skips where it is not. Measured on a full day of
 `COINCHECK:BTC_SPOT` and `GMO:BTC_JPY`, the largest relative difference is
 4e-16 — floating-point last-bit, from accumulating the levels in a different
-order.
+order. `VolSpread` at an execution size agrees with the warehouse pipeline's
+stored files to 2e-9 relative on every column, and the test suite holds the
+same formulas written out independently.
 
 ## Bronze as trading data
 
@@ -70,8 +109,8 @@ from hase.bronze import DataType
 from qate.core.model import Market
 
 market = Market.from_str("BINANCE:BTC_USDT")
-bronze.markets()                                    # [Market, ...] on disk
-bronze.dates(market, DataType.ORDER_BOOK)           # complete JST days
+bronze.markets()  # [Market, ...] on disk
+bronze.dates(market, DataType.ORDER_BOOK)  # complete JST days
 books = bronze.load(market, DataType.ORDER_BOOK, "2026-09-01", "2026-09-07")
 ```
 
@@ -148,8 +187,7 @@ would be worse than saying how many there were.
 
 ## Not yet built
 
-Silver and gold derivation, spread volatility, lead-lag, InfluxDB and Grafana
-export. The lead-lag plot is the piece with no reference implementation.
+Lead-lag, InfluxDB and Grafana export. The lead-lag plot is the piece with no reference implementation.
 
 ## Tests
 

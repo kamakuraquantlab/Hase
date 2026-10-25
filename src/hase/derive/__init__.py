@@ -25,7 +25,16 @@ DERIVATIONS = ("BookState", "MarketPrice", "VolSpread")
 DEFAULT_EXECUTION_SIZE = 0.002
 
 
-def plan(dataset: str, *, execution_size=None, execution_notional=None, step=None, lookback=None):
+def plan(
+    dataset: str,
+    *,
+    execution_size=None,
+    execution_notional=None,
+    step=None,
+    horizon=None,
+    lookback=None,
+    smooth=None,
+):
     """The partition and keyword arguments one derivation will run with."""
     if dataset == "MarketPrice":
         if execution_size is None and execution_notional is None:
@@ -36,9 +45,18 @@ def plan(dataset: str, *, execution_size=None, execution_notional=None, step=Non
         return market_price.partition(execution_size, execution_notional), kwargs
 
     if dataset == "VolSpread":
-        step = step or vol_spread.DEFAULT_STEP
-        lookback = lookback or vol_spread.DEFAULT_LOOKBACK
-        return {"param_id": vol_spread.param_id(step, lookback)}, {"step": step, "lookback": lookback}
+        # No size is the top of the book, not a default size: the quoted
+        # spread and a walked one are different numbers, kept apart.
+        if execution_notional is not None:
+            raise ValueError("VolSpread is measured at an --execution-size, not a notional")
+        kwargs = {
+            "execution_size": execution_size,
+            "step": int(step or vol_spread.DEFAULT_STEP),
+            "horizon": int(horizon or vol_spread.DEFAULT_HORIZON),
+            "lookback": int(lookback or vol_spread.DEFAULT_LOOKBACK),
+            "smooth": int(smooth or vol_spread.DEFAULT_SMOOTH),
+        }
+        return vol_spread.partition(**kwargs), kwargs
 
     if dataset == "BookState":
         return {}, {}
@@ -56,7 +74,9 @@ def run(
     execution_size=None,
     execution_notional=None,
     step=None,
+    horizon=None,
     lookback=None,
+    smooth=None,
 ) -> tuple[Path, bool]:
     """Derive one market-day. Returns the path and whether it was computed.
 
@@ -64,7 +84,13 @@ def run(
     fill a gap should cost the gap, not the range.
     """
     params, kwargs = plan(
-        dataset, execution_size=execution_size, execution_notional=execution_notional, step=step, lookback=lookback
+        dataset,
+        execution_size=execution_size,
+        execution_notional=execution_notional,
+        step=step,
+        horizon=horizon,
+        lookback=lookback,
+        smooth=smooth,
     )
     path = derived_path(root, dataset, market, file_date, params)
     if path.is_file() and not recreate:

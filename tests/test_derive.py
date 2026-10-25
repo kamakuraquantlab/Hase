@@ -13,6 +13,7 @@ import math
 import os
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from hase.dataset import trade_count
@@ -20,7 +21,7 @@ from hase.derive import plan, run
 from hase.derive.book_state import derive as book_state
 from hase.derive.market_price import DEGENERATE_SPREAD_BPS, dropped
 from hase.derive.market_price import derive as market_price
-from hase.derive.vol_spread import DAY, realized_vol_bps
+from hase.derive.vol_spread import DAY, measure, realized_vol_bps
 from hase.derive.vol_spread import derive as vol_spread
 from hase.layout import derived_path
 from hase.store import MissingDataError, derived_attrs, read_derived
@@ -215,6 +216,135 @@ def test_realized_volatility_matches_the_closed_form():
     assert realized_vol_bps(prices) == pytest.approx(expected)
 
 
+def _two_days(make_data, n=1440):
+    """The day before DATE and DATE, one snapshot a minute, a price that moves."""
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    from hase.layout import data_path
+
+    root = None
+    for file_date in ("2025-06-30", DATE):
+        root = make_data(file_date=file_date, n=n)
+        book = data_path(root, MARKET, "OrderBook", file_date)
+        table = pq.ParquetFile(book).read().to_pandas()  # the file alone, not its partitions
+        wave = 1 + 0.002 * np.sin(np.arange(n) / 37.0) + (0.001 if file_date == DATE else 0.0)
+        for column in table.columns:
+            if column.endswith("_price"):
+                table[column] = table[column] * wave
+        pq.write_table(pa.Table.from_pandas(table, preserve_index=False), book)
+    return root
+
+
+def test_vol_spread_at_a_size_and_at_the_touch_are_different_partitions():
+    touch, _ = plan("VolSpread")
+    walked, kwargs = plan("VolSpread", execution_size=0.002, horizon=180, lookback=900, smooth=300)
+    assert touch == {"execution_size": "touch", "param_id": "vs_60_300_120_1s"}
+    assert walked == {"execution_size": "0.002", "param_id": "vs_180_900_300_1s"}
+    assert kwargs["execution_size"] == 0.002
+
+
+def test_vol_spread_walks_the_book_when_given_a_size(make_data):
+    root = _two_days(make_data)
+    touch = vol_spread(root, MARKET, DATE)
+    walked = vol_spread(root, MARKET, DATE, execution_size=1.5)  # deeper than the first level
+    assert (walked["spread_bps"] > touch["spread_bps"]).all()
+
+
+def test_vol_spread_is_warmed_up_by_the_evening_before(make_data):
+    """00:00 JST has a full window behind it when the day before is on disk."""
+    warm = vol_spread(_two_days(make_data), MARKET, DATE)
+    assert np.isfinite(warm.loc[0, ["rv_bps", "volatility_raw", "volatility_ema"]].astype(float)).all()
+
+
+def test_vol_spread_without_the_day_before_starts_short_and_says_so(make_data):
+    cold = vol_spread(make_data(n=1440), MARKET, DATE)
+    assert cold["rv_bps"].iloc[:300].isna().all() and cold["rv_bps"].iloc[300:].notna().all()
+
+
+def test_vol_spread_agrees_with_the_pipeline_it_replaces(make_data):
+    """The warehouse pipeline's formulas, written out in pandas, over the same quotes.
+
+    That pipeline resampled bid and ask to the last value in each second,
+    carried them forward, and measured on 8 hours before the day and the day.
+    Against its stored files on the seller's warehouse, Hase agreed to 2e-9
+    relative on every column (GMO BTC_JPY, XRP_JPY; four parameterisations).
+    """
+    import pandas as pd
+
+    root = _two_days(make_data)
+    got = vol_spread(root, MARKET, DATE, execution_size=0.5, horizon=60, lookback=300, smooth=120)
+
+    quotes = pd.concat([market_price(root, MARKET, d, execution_size=0.5) for d in ("2025-06-30", DATE)]).set_index(
+        "ts"
+    )
+    quotes.index = pd.to_datetime(quotes.index, unit="s")
+    start = pd.Timestamp(got["ts"].iloc[0], unit="s")
+    quotes = quotes[quotes.index >= start - pd.Timedelta(hours=8)]
+    bid = quotes["bid"].resample("1s").last().ffill()
+    ask = quotes["ask"].resample("1s").last().ffill()
+    mid, spread = (bid + ask) / 2, ask - bid
+    spread_pct = spread / mid
+    volatility_raw = mid.pct_change(periods=60).rolling(window=300, min_periods=1).std()
+    volatility_ema = volatility_raw.ewm(span=120, adjust=False).mean()
+    spread_pct_ema = spread_pct.ewm(span=300, adjust=False).mean()
+    want = pd.DataFrame(
+        {
+            "mid": mid,
+            "spread_bps": spread_pct * 1e4,
+            "volatility_raw": volatility_raw,
+            "volatility_ema": volatility_ema,
+            "spread_pct_ema": spread_pct_ema,
+            "vol_spread_ratio": volatility_ema / spread_pct_ema,
+        }
+    )
+    want = want[want.index >= start]
+    got = got.set_index(pd.to_datetime(got["ts"], unit="s")).loc[want.index]
+    for column in want.columns:
+        a, b = want[column].to_numpy(), got[column].to_numpy()
+        usable = np.isfinite(a)
+        assert np.isfinite(b[usable]).all(), column
+        assert np.allclose(a[usable], b[usable], rtol=1e-9, atol=0), column
+
+
+def test_measure_of_a_steady_trend_has_no_volatility_and_a_constant_spread():
+    mid = 100 * 1.0001 ** np.arange(2000)
+    out = measure(mid, 2e-4 * mid, horizon=60, lookback=300, smooth=120)
+    assert np.nanmax(out["volatility_raw"][400:]) < 1e-12  # every 60 s return is the same
+    assert np.allclose(out["spread_pct_ema"], 2e-4) and np.allclose(out["spread_bps"], 2.0)
+
+
+def test_measure_counts_windows_in_grid_points_not_seconds():
+    """On a 5 s grid, a 300 s lookback is 60 points: 60 returns, so from the 61st price."""
+    rng = np.random.default_rng(0)
+    mid = 100 * np.exp(np.cumsum(rng.normal(0, 1e-4, 400)))
+    coarse = measure(mid, np.full(400, 0.01), step=5, horizon=5, lookback=300, smooth=120)
+    assert np.isnan(coarse["rv_bps"][59]) and np.isfinite(coarse["rv_bps"][60])
+
+
+def test_cli_takes_several_parameterisations_at_once():
+    from hase.cli import _vol_spread_params, build_parser
+
+    args = build_parser().parse_args(
+        [
+            "derive",
+            "VolSpread",
+            "--market",
+            MARKET,
+            "--start",
+            DATE,
+            "--params",
+            "60:300:120",
+            "--params",
+            "300:900:300",
+        ]
+    )
+    assert _vol_spread_params(args) == [
+        {"horizon": 60, "lookback": 300, "smooth": 120},
+        {"horizon": 300, "lookback": 900, "smooth": 300},
+    ]
+
+
 # ---- running and storing ---------------------------------------------------
 
 
@@ -237,7 +367,7 @@ def test_run_leaves_no_partial_file_behind(make_data):
 
 def test_reading_something_underived_says_how_to_derive_it(root):
     with pytest.raises(MissingDataError) as exc:
-        read_derived(root, "VolSpread", MARKET, DATE, {"param_id": "g1s_rv300s"})
+        read_derived(root, "VolSpread", MARKET, DATE, {"execution_size": "touch", "param_id": "vs_60_300_120_1s"})
     assert "hase derive VolSpread" in str(exc.value)
 
 

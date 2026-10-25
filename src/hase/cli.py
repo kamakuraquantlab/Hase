@@ -70,33 +70,64 @@ def cmd_derive(args) -> int:
     wanted = _wanted_days(args)
     made = skipped = missing = 0
     for file_date in wanted:
-        try:
-            path, was_made = run_derivation(
-                root,
-                args.dataset,
-                args.market,
-                file_date,
-                recreate=args.recreate,
-                execution_size=getattr(args, "execution_size", None),
-                execution_notional=getattr(args, "execution_notional", None),
-                step=getattr(args, "step", None),
-                lookback=getattr(args, "lookback", None),
-            )
-        except MissingDataError as exc:
-            missing += 1
-            print(f"  {file_date}  no source data", file=sys.stderr)
-            if missing == 1:
-                print(f"    {exc}", file=sys.stderr)
-            continue
-        if was_made:
-            made += 1
-            print(f"  {file_date}  {path.stat().st_size / 1e6:.1f} MB{_dropped_note(path)}")
-        else:
-            skipped += 1
+        for params in _vol_spread_params(args):
+            try:
+                path, was_made = run_derivation(
+                    root,
+                    args.dataset,
+                    args.market,
+                    file_date,
+                    recreate=args.recreate,
+                    execution_size=getattr(args, "execution_size", None),
+                    execution_notional=getattr(args, "execution_notional", None),
+                    step=getattr(args, "step", None),
+                    **params,
+                )
+            except MissingDataError as exc:
+                missing += 1
+                print(f"  {file_date}  no source data", file=sys.stderr)
+                if missing == 1:
+                    print(f"    {exc}", file=sys.stderr)
+                break
+            if was_made:
+                made += 1
+                print(
+                    f"  {file_date}  {path.stat().st_size / 1e6:.1f} MB  {path.parent.parent.name}{_dropped_note(path)}"
+                )
+            else:
+                skipped += 1
     print(
         f"\n{args.dataset} for {args.market}: {made} derived, {skipped} already present, {missing} without source data"
     )
     return 1 if made == 0 and skipped == 0 else 0
+
+
+def _vol_spread_params(args) -> list[dict]:
+    """The VolSpread windows to derive: each --params, or the single flags.
+
+    Several parameterisations of one day share its source, read once, so they
+    are asked for together rather than by running the command again.
+    """
+    single = {
+        "horizon": getattr(args, "horizon", None),
+        "lookback": getattr(args, "lookback", None),
+        "smooth": getattr(args, "smooth", None),
+    }
+    given = getattr(args, "params", None)
+    if not given:
+        return [single]
+    if any(v is not None for v in single.values()):
+        raise ValueError("Give --params or --horizon/--lookback/--smooth, not both")
+    out = []
+    for text in given:
+        try:
+            horizon, lookback, smooth = (int(x) for x in text.split(":"))
+        except ValueError:
+            raise ValueError(
+                f"--params {text!r}: expected HORIZON:LOOKBACK:SMOOTH in seconds, e.g. 60:300:120"
+            ) from None
+        out.append({"horizon": horizon, "lookback": lookback, "smooth": smooth})
+    return out
 
 
 def _dropped_note(path: Path) -> str:
@@ -155,7 +186,11 @@ def cmd_local(args) -> int:
 
 
 def _parameterisations(root, dataset, market):
-    """Every parameter partition present on disk for this dataset, plus the bare one."""
+    """Every parameter partition present on disk for this dataset, at any depth.
+
+    VolSpread nests two -- `execution_size=` then `param_id=` -- so the
+    parameters are every directory between the symbol and the dates.
+    """
     from hase.layout import parse_market
 
     layer = DERIVED[dataset][0]
@@ -163,11 +198,18 @@ def _parameterisations(root, dataset, market):
     base = root / layer / f"dataset={dataset}" / f"exchange={exchange}" / f"symbol={symbol}"
     if not base.is_dir():
         return []
-    found = [{}]
-    for child in sorted(base.iterdir()):
-        if child.is_dir() and "=" in child.name and not child.name.startswith("date="):
-            key, value = child.name.split("=", 1)
-            found.append({key: value})
+    found = []
+
+    def walk(directory, params):
+        children = [c for c in sorted(directory.iterdir()) if c.is_dir() and "=" in c.name]
+        if any(c.name.startswith("date=") for c in children):
+            found.append(params)
+        for child in children:
+            if not child.name.startswith("date="):
+                key, value = child.name.split("=", 1)
+                walk(child, {**params, key: value})
+
+    walk(base, {})
     return found
 
 
@@ -225,10 +267,23 @@ dates
     p.add_argument("--days", type=int, help="How many days from --start. Default 1")
     p.add_argument("--end", help="Last JST day, inclusive. Use instead of --days")
     p.add_argument("--recreate", action="store_true", help="Rebuild days that already exist")
-    p.add_argument("--execution-size", type=float, help="MarketPrice: trade size in base currency, e.g. 0.002")
+    p.add_argument(
+        "--execution-size",
+        type=float,
+        help="MarketPrice: trade size in base currency, e.g. 0.002. VolSpread: measure on that "
+        "size's MarketPrice instead of the top of the book",
+    )
     p.add_argument("--execution-notional", type=float, help="MarketPrice: trade size in quote currency, e.g. 1000000")
     p.add_argument("--step", type=int, help="VolSpread: grid interval in seconds. Default 1")
-    p.add_argument("--lookback", type=int, help="VolSpread: realized volatility window in seconds. Default 300")
+    p.add_argument("--horizon", type=int, help="VolSpread: return horizon for volatility, seconds. Default 60")
+    p.add_argument("--lookback", type=int, help="VolSpread: volatility and spread window, seconds. Default 300")
+    p.add_argument("--smooth", type=int, help="VolSpread: EMA span smoothing the volatility, seconds. Default 120")
+    p.add_argument(
+        "--params",
+        action="append",
+        metavar="H:L:S",
+        help="VolSpread: horizon:lookback:smooth in seconds, repeatable, e.g. --params 60:300:120 --params 60:900:300",
+    )
     p.set_defaults(func=cmd_derive)
 
     p = sub.add_parser("local", help="What is downloaded, and what has been derived")
