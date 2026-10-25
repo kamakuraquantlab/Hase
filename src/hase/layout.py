@@ -30,7 +30,8 @@ GOLD = "gold"
 DERIVED = {
     "BookState": (SILVER, "OrderBook"),
     "MarketPrice": (SILVER, "OrderBook"),
-    "VolSpread": (GOLD, "OrderBook"),
+    "Spread": (GOLD, "OrderBook"),
+    "Volatility": (GOLD, "OrderBook"),
 }
 
 
@@ -59,7 +60,7 @@ def derived_path(root: Path, dataset: str, market: str, file_date: str, params: 
 
     `params` become partition directories between symbol and date, in the order
     given, so two parameterisations coexist instead of overwriting each other.
-    `execution_size` for MarketPrice, `param_id` for VolSpread.
+    `execution_size` for MarketPrice; `execution_size` then `param_id` for Spread and Volatility.
     """
     if dataset not in DERIVED:
         raise ValueError(f"Unknown dataset {dataset!r}. Known: {', '.join(sorted(DERIVED))}")

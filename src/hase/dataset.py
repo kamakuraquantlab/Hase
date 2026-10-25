@@ -15,48 +15,25 @@ Nothing here writes; materialising is `hase derive`'s job alone.
 import sys
 from pathlib import Path
 
-from .derive import book_state, market_price, plan, vol_spread
+from .derive import MODULES, plan
 from .layout import derived_path
-
-_MODULES = {"BookState": book_state, "MarketPrice": market_price, "VolSpread": vol_spread}
 
 # Said once per dataset and market, not once per day.
 _ANNOUNCED: set[tuple[str, str]] = set()
 
 
-def load(
-    root: Path,
-    dataset: str,
-    market: str,
-    file_date: str,
-    *,
-    prefer_stored: bool = True,
-    execution_size=None,
-    execution_notional=None,
-    step=None,
-    horizon=None,
-    lookback=None,
-    smooth=None,
-):
+def load(root: Path, dataset: str, market: str, file_date: str, *, prefer_stored: bool = True, **params):
     """A derived dataset for one market-day, read if stored and derived if not."""
     import pyarrow.parquet as pq
 
-    params, kwargs = plan(
-        dataset,
-        execution_size=execution_size,
-        execution_notional=execution_notional,
-        step=step,
-        horizon=horizon,
-        lookback=lookback,
-        smooth=smooth,
-    )
+    params, kwargs = plan(dataset, **params)
     path = derived_path(root, dataset, market, file_date, params)
     if prefer_stored and path.is_file():
         own = pq.ParquetFile(path).schema_arrow.names
         if _usable(dataset, own):
             return pq.read_table(path, columns=own).to_pandas()
         _announce(dataset, market, path)
-    return _MODULES[dataset].derive(root, market, file_date, **kwargs)
+    return MODULES[dataset].derive(root, market, file_date, **kwargs)
 
 
 def _usable(dataset: str, columns) -> bool:
@@ -71,7 +48,7 @@ def _usable(dataset: str, columns) -> bool:
 
     So the name is not enough. The columns have to be there too.
     """
-    required = set(_MODULES[dataset].COLUMNS)
+    required = set(MODULES[dataset].COLUMNS)
     return required.issubset(set(columns))
 
 

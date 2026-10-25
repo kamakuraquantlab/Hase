@@ -70,7 +70,7 @@ def cmd_derive(args) -> int:
     wanted = _wanted_days(args)
     made = skipped = missing = 0
     for file_date in wanted:
-        for params in _vol_spread_params(args):
+        for params in _param_sets(args):
             try:
                 path, was_made = run_derivation(
                     root,
@@ -102,31 +102,35 @@ def cmd_derive(args) -> int:
     return 1 if made == 0 and skipped == 0 else 0
 
 
-def _vol_spread_params(args) -> list[dict]:
-    """The VolSpread windows to derive: each --params, or the single flags.
+# The windows each measured dataset takes, in the order --params spells them.
+WINDOWS = {"Spread": ("span",), "Volatility": ("horizon", "lookback", "smooth")}
 
-    Several parameterisations of one day share its source, read once, so they
+
+def _param_sets(args) -> list[dict]:
+    """The windows to derive: each --params, or the single flags.
+
+    Several parameterisations of one day share its grid, read once, so they
     are asked for together rather than by running the command again.
     """
-    single = {
-        "horizon": getattr(args, "horizon", None),
-        "lookback": getattr(args, "lookback", None),
-        "smooth": getattr(args, "smooth", None),
-    }
+    names = WINDOWS.get(args.dataset, ())
+    single = {name: getattr(args, name, None) for name in names}
     given = getattr(args, "params", None)
     if not given:
         return [single]
+    if not names:
+        raise ValueError(f"--params is for {' and '.join(WINDOWS)}, not {args.dataset}")
     if any(v is not None for v in single.values()):
-        raise ValueError("Give --params or --horizon/--lookback/--smooth, not both")
+        raise ValueError(f"Give --params or --{'/--'.join(names)}, not both")
     out = []
     for text in given:
         try:
-            horizon, lookback, smooth = (int(x) for x in text.split(":"))
+            values = [int(x) for x in text.split(":")]
+            if len(values) != len(names):
+                raise ValueError
         except ValueError:
-            raise ValueError(
-                f"--params {text!r}: expected HORIZON:LOOKBACK:SMOOTH in seconds, e.g. 60:300:120"
-            ) from None
-        out.append({"horizon": horizon, "lookback": lookback, "smooth": smooth})
+            spelled = ":".join(n.upper() for n in names)
+            raise ValueError(f"--params {text!r}: {args.dataset} expects {spelled} in seconds") from None
+        out.append(dict(zip(names, values, strict=True)))
     return out
 
 
@@ -188,7 +192,7 @@ def cmd_local(args) -> int:
 def _parameterisations(root, dataset, market):
     """Every parameter partition present on disk for this dataset, at any depth.
 
-    VolSpread nests two -- `execution_size=` then `param_id=` -- so the
+    Spread and Volatility nest two -- `execution_size=` then `param_id=` -- so the
     parameters are every directory between the symbol and the dates.
     """
     from hase.layout import parse_market
@@ -270,19 +274,23 @@ dates
     p.add_argument(
         "--execution-size",
         type=float,
-        help="MarketPrice: trade size in base currency, e.g. 0.002. VolSpread: measure on that "
-        "size's MarketPrice instead of the top of the book",
+        help="MarketPrice: trade size in base currency, e.g. 0.002. Spread, Volatility: measure on "
+        "that size's MarketPrice instead of the top of the book",
     )
     p.add_argument("--execution-notional", type=float, help="MarketPrice: trade size in quote currency, e.g. 1000000")
-    p.add_argument("--step", type=int, help="VolSpread: grid interval in seconds. Default 1")
-    p.add_argument("--horizon", type=int, help="VolSpread: return horizon for volatility, seconds. Default 60")
-    p.add_argument("--lookback", type=int, help="VolSpread: volatility and spread window, seconds. Default 300")
-    p.add_argument("--smooth", type=int, help="VolSpread: EMA span smoothing the volatility, seconds. Default 120")
+    p.add_argument("--step", type=int, help="Spread, Volatility: grid interval in seconds. Default 1")
+    p.add_argument("--span", type=int, help="Spread: EMA span in seconds. Default 300")
+    p.add_argument("--horizon", type=int, help="Volatility: return horizon in seconds. Default 60")
+    p.add_argument(
+        "--lookback", type=int, help="Volatility: window the volatility is measured over, seconds. Default 300"
+    )
+    p.add_argument("--smooth", type=int, help="Volatility: EMA span smoothing it, seconds. Default 120")
     p.add_argument(
         "--params",
         action="append",
-        metavar="H:L:S",
-        help="VolSpread: horizon:lookback:smooth in seconds, repeatable, e.g. --params 60:300:120 --params 60:900:300",
+        metavar="WINDOWS",
+        help="Repeatable windows in seconds -- Spread: SPAN (e.g. 300); Volatility: HORIZON:LOOKBACK:SMOOTH "
+        "(e.g. 60:300:120). Each day's grid is read once for all of them",
     )
     p.set_defaults(func=cmd_derive)
 

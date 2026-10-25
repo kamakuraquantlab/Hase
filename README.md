@@ -11,8 +11,10 @@ things; Hase is where you go to look at them.
 pip install kamakuraquantlab-hase
 hase local       --market COINCHECK:BTC_SPOT
 hase derive MarketPrice --market COINCHECK:BTC_SPOT --start 2025-07-01 --end 2025-07-28
-hase derive VolSpread   --market COINCHECK:BTC_SPOT --start 2025-07-01 --end 2025-07-28
-hase derive VolSpread   --market GMO:BTC_JPY --execution-size 0.002 --start 2026-06-01 --end 2026-06-30 \
+hase derive Volatility  --market COINCHECK:BTC_SPOT --start 2025-07-01 --end 2025-07-28
+hase derive Spread      --market GMO:BTC_JPY --execution-size 0.002 --start 2026-06-01 --end 2026-06-30 \
+                        --params 300 --params 900
+hase derive Volatility  --market GMO:BTC_JPY --execution-size 0.002 --start 2026-06-01 --end 2026-06-30 \
                         --params 60:300:120 --params 60:900:300
 hase plot-trades --market COINCHECK:BTC_SPOT --date 2025-07-01 --output trades.png
 hase plot-book   --market COINCHECK:BTC_SPOT --date 2025-07-01 --output book.png
@@ -27,7 +29,8 @@ written on, beside it under the same root, in the layout the warehouse uses.
 |---|---|---|
 | `BookState` | silver | Best bid and ask per snapshot, with mid, spread and the depth resting at the touch |
 | `MarketPrice` | silver | What a given trade size would actually pay, by walking the book |
-| `VolSpread` | gold | Bid, ask, mid and spread on a regular grid, and the volatility measured on it |
+| `Spread` | gold | The spread's moving average on a regular clock, in bps |
+| `Volatility` | gold | Realized volatility and the volatility of returns over a window, on a regular clock, in bps |
 
 **Size is in base currency.** `--execution-size 0.002` is 0.002 BTC, and it is
 the default because it means the same trade on every venue and on every day.
@@ -49,36 +52,38 @@ many of each a day held is written into the file (`df.attrs["dropped"]` after
 `pd.read_parquet`) and printed by `hase derive`, because it is a fact about the
 archive worth being able to count.
 
-## Spread and volatility: one calculation, any parameters
+## Spread and volatility: one grid, two datasets, any parameters
 
-Every spread and volatility figure Hase makes comes from one function,
-`hase.derive.vol_spread.measure`, and `VolSpread` is that function stored on a
-grid. Code that needs the figures on a grid of its own -- a labeller
-resampling ticks, say -- calls `measure` rather than writing the formula again.
+Both are measured on the quote put on a clock: the last bid and ask in each
+step, carried through a step with no update (`hase.derive.grid.quote_grid`).
+The grid is not stored -- it is a tenth of a second a day from data already on
+disk, with nothing to choose but the step -- so each dataset holds only what
+its own parameters make. A script that wants the mid on a clock calls
+`quote_grid`.
 
-`VolSpread` is measured either at the top of the book (the default) or on what
-a size would actually pay (`--execution-size`, read from `MarketPrice`). Its
-windows are parameters, and each set is its own partition, so any number sit
-side by side:
+Each is measured either at the top of the book (the default) or on what a size
+would actually pay (`--execution-size`, read from `MarketPrice`), and each set
+of windows is its own partition, so any number sit side by side:
 
 ```
-gold/dataset=VolSpread/exchange=GMO/symbol=BTC_JPY/execution_size=0.002/param_id=vs_60_300_120_1s/date=2026-06-01/data.parquet
-gold/dataset=VolSpread/exchange=GMO/symbol=BTC_JPY/execution_size=touch/param_id=vs_60_300_120_1s/date=2026-06-01/data.parquet
+gold/dataset=Spread/exchange=GMO/symbol=BTC_JPY/execution_size=0.002/param_id=g1s_ema300s/date=2026-06-01/data.parquet
+gold/dataset=Volatility/exchange=GMO/symbol=BTC_JPY/execution_size=touch/param_id=g1s_h60s_lb300s_ema120s/date=2026-06-01/data.parquet
 ```
 
-`vs_<horizon>_<lookback>_<smooth>_<step>s`: `--horizon` is the return the
-volatility is measured on, `--lookback` the window it is measured over (and the
-spread's EMA span), `--smooth` the EMA span of the volatility, and `--step` the
-grid, all in seconds. `--params H:L:S`, repeated, derives several sets from one
-read of each day.
+| Dataset | Windows (seconds) | Columns, all bps |
+|---|---|---|
+| `Spread` | `--span`: the EMA span | `spread_bps_ema` |
+| `Volatility` | `--horizon`: the return; `--lookback`: the window it is measured over; `--smooth`: the EMA span | `rv_bps` (root of summed squared one-step log returns over `lookback`), `vol_bps` (standard deviation of `horizon` returns over `lookback`), `vol_bps_ema` |
 
-| Column | What it is |
-|---|---|
-| `bid`, `ask`, `mid`, `spread`, `spread_pct`, `spread_bps` | The last quote in each step, carried through a step with no update |
-| `rv_bps` | Realized volatility over `lookback`: root of the summed squared one-step log returns, in bps |
-| `volatility_raw` | Standard deviation of `horizon` returns over `lookback`, as a fraction |
-| `volatility_ema`, `spread_pct_ema` | Those smoothed over `smooth` and `lookback` |
-| `vol_spread_ratio` | `volatility_ema / spread_pct_ema`: how far price moves for what a round trip costs |
+`--step` is the grid for both. `--params`, repeated, derives several sets from
+one read of each day: `SPAN` for Spread, `HORIZON:LOOKBACK:SMOOTH` for
+Volatility. Both are in bps, so `vol_bps_ema / spread_bps_ema` -- how far price
+moves for what a round trip costs -- needs no conversion; it is not stored,
+because it is a choice of which two windows to divide.
+
+The formulas are `spread.measure` and `volatility.measure`, and code that needs
+the figures on a grid of its own -- a labeller resampling ticks -- calls those
+rather than writing them again.
 
 Each day is read with the eight hours before it, so the windows at 00:00 JST
 are full when the previous day is on disk; without it, they are NaN until a
@@ -93,9 +98,9 @@ trading code. That is only safe if the two agree, so the test suite checks
 mounted, and skips where it is not. Measured on a full day of
 `COINCHECK:BTC_SPOT` and `GMO:BTC_JPY`, the largest relative difference is
 4e-16 — floating-point last-bit, from accumulating the levels in a different
-order. `VolSpread` at an execution size agrees with the warehouse pipeline's
-stored files to 2e-9 relative on every column, and the test suite holds the
-same formulas written out independently.
+order. `Spread` and `Volatility` at an execution size agree with the warehouse
+pipeline's stored VolSpread to 2e-9 relative, and the test suite holds the same
+formulas written out independently.
 
 ## Bronze as trading data
 

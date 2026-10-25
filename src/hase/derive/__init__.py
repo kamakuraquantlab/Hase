@@ -14,9 +14,10 @@ from pathlib import Path
 
 from ..layout import derived_path
 from ..store import write_derived
-from . import book_state, market_price, vol_spread
+from . import book_state, market_price, spread, volatility
 
-DERIVATIONS = ("BookState", "MarketPrice", "VolSpread")
+DERIVATIONS = ("BookState", "MarketPrice", "Spread", "Volatility")
+MODULES = {"BookState": book_state, "MarketPrice": market_price, "Spread": spread, "Volatility": volatility}
 
 # Size in base currency by default, matching the warehouse: a quote-currency
 # notional buys a different quantity every day as the price moves, so it is not
@@ -31,6 +32,7 @@ def plan(
     execution_size=None,
     execution_notional=None,
     step=None,
+    span=None,
     horizon=None,
     lookback=None,
     smooth=None,
@@ -44,19 +46,19 @@ def plan(
         kwargs = {"execution_size": execution_size, "execution_notional": execution_notional}
         return market_price.partition(execution_size, execution_notional), kwargs
 
-    if dataset == "VolSpread":
+    if dataset in ("Spread", "Volatility"):
         # No size is the top of the book, not a default size: the quoted
         # spread and a walked one are different numbers, kept apart.
         if execution_notional is not None:
-            raise ValueError("VolSpread is measured at an --execution-size, not a notional")
-        kwargs = {
-            "execution_size": execution_size,
-            "step": int(step or vol_spread.DEFAULT_STEP),
-            "horizon": int(horizon or vol_spread.DEFAULT_HORIZON),
-            "lookback": int(lookback or vol_spread.DEFAULT_LOOKBACK),
-            "smooth": int(smooth or vol_spread.DEFAULT_SMOOTH),
-        }
-        return vol_spread.partition(**kwargs), kwargs
+            raise ValueError(f"{dataset} is measured at an --execution-size, not a notional")
+        kwargs = {"execution_size": execution_size, "step": int(step or spread.DEFAULT_STEP)}
+        if dataset == "Spread":
+            kwargs["span"] = int(span or spread.DEFAULT_SPAN)
+            return spread.partition(**kwargs), kwargs
+        kwargs["horizon"] = int(horizon or volatility.DEFAULT_HORIZON)
+        kwargs["lookback"] = int(lookback or volatility.DEFAULT_LOOKBACK)
+        kwargs["smooth"] = int(smooth or volatility.DEFAULT_SMOOTH)
+        return volatility.partition(**kwargs), kwargs
 
     if dataset == "BookState":
         return {}, {}
@@ -65,37 +67,16 @@ def plan(
 
 
 def run(
-    root: Path,
-    dataset: str,
-    market: str,
-    file_date: str,
-    *,
-    recreate: bool = False,
-    execution_size=None,
-    execution_notional=None,
-    step=None,
-    horizon=None,
-    lookback=None,
-    smooth=None,
+    root: Path, dataset: str, market: str, file_date: str, *, recreate: bool = False, **params
 ) -> tuple[Path, bool]:
     """Derive one market-day. Returns the path and whether it was computed.
 
-    Existing output is left alone unless `recreate`: re-running a range to
-    fill a gap should cost the gap, not the range.
+    `params` are `plan`'s. Existing output is left alone unless `recreate`:
+    re-running a range to fill a gap should cost the gap, not the range.
     """
-    params, kwargs = plan(
-        dataset,
-        execution_size=execution_size,
-        execution_notional=execution_notional,
-        step=step,
-        horizon=horizon,
-        lookback=lookback,
-        smooth=smooth,
-    )
-    path = derived_path(root, dataset, market, file_date, params)
+    partition, kwargs = plan(dataset, **params)
+    path = derived_path(root, dataset, market, file_date, partition)
     if path.is_file() and not recreate:
         return path, False
-
-    module = {"BookState": book_state, "MarketPrice": market_price, "VolSpread": vol_spread}[dataset]
-    frame = module.derive(root, market, file_date, **kwargs)
-    return write_derived(root, dataset, market, file_date, frame, params), True
+    frame = MODULES[dataset].derive(root, market, file_date, **kwargs)
+    return write_derived(root, dataset, market, file_date, frame, partition), True
