@@ -5,14 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "kamakuraquantlab-hase"
 version = "0.10.0"
-description = "Kamakura Quant Lab analysis toolkit"
+description = "Kamakura Quant Lab toolkit for deriving and plotting order-book and trade data"
 readme = "README.md"
 requires-python = ">=3.13"
 
 license = "Apache-2.0"
 license-files = ["LICENSE.md"]
 authors = [{name = "Kamakura Quant Lab", email = "support@kamakuraquantlab.jp"}]
-keywords = ["cryptocurrency", "market-data", "order-book", "japan", "quantitative-finance"]
+keywords = ["cryptocurrency", "market-data", "order-book", "japan", "quantitative-finance", "market-microstructure", "parquet"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Financial and Insurance Industry",
@@ -39,9 +39,9 @@ dev = ["pytest>=7.0.0", "ruff>=0.1.0"]
 
 [project.urls]
 Homepage = "https://kamakuraquantlab.jp"
-Documentation = "https://kamakuraquantlab.jp/support/"
+Documentation = "https://kamakuraquantlab.jp/tool/hase/"
 Source = "https://github.com/kamakuraquantlab/Hase"
-"The data" = "https://kamakuraquantlab.jp/data/"
+"The data" = "https://kamakuraquantlab.jp/tsurugaoka/"
 
 [project.scripts]
 # `hase.cli`, not a bare `cli`: a top-level module outside the package is

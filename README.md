@@ -4,6 +4,9 @@ The **Kamakura Quant Lab** analysis toolkit. Reads the bronze data Komachi
 downloads, derives the silver and gold datasets the articles are written on,
 and draws it.
 
+How to use it: <https://kamakuraquantlab.jp/tool/hase/>. What data it reads:
+[Market Archive](https://kamakuraquantlab.jp/tsurugaoka/).
+
 Named for the district where the Great Buddha sits. Komachi is where you get
 things; Hase is where you go to look at them.
 
